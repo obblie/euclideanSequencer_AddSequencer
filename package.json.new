@@ -1,0 +1,35 @@
+{
+  "name": "euclidean-sequencer",
+  "version": "1.0.0",
+  "description": "3D Euclidean Sequencer with MIDI support",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --debug",
+    "build": "electron-builder build",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^27.1.0",
+    "electron-builder": "^24.6.4"
+  },
+  "dependencies": {
+    "three": "^0.128.0"
+  },
+  "build": {
+    "appId": "com.euclidean.sequencer",
+    "mac": {
+      "category": "public.app-category.music",
+      "target": ["dmg", "zip"]
+    },
+    "win": {
+      "target": ["nsis", "portable"]
+    },
+    "linux": {
+      "target": ["AppImage", "deb"]
+    }
+  }
+} 

@@ -1,0 +1,2120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Euclidean Sequencer</title>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #00ff95;
+            --secondary-color: #9333ea;
+            --background-color: #1a1a2e;
+            --text-color: #ffffff;
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Press Start 2P', cursive;
+            color: var(--text-color);
+            background-color: var(--background-color);
+        }
+
+        .pitch-controls {
+            position: absolute;
+            top: 0;
+            right: 0;
+            background: rgba(26, 26, 46, 0.9);
+            padding: 20px;
+            border-left: 2px solid var(--secondary-color);
+            box-shadow: -4px 0 20px rgba(147, 51, 234, 0.2);
+            max-height: 100vh;
+            overflow-y: auto;
+            transition: all 0.3s ease;
+            z-index: 1000;
+            width: 250px;
+        }
+
+        .modulator-controls {
+            position: absolute;
+            top: 0;
+            left: 0;
+            background: rgba(26, 26, 46, 0.9);
+            padding: 20px;
+            border-right: 2px solid var(--secondary-color);
+            box-shadow: 4px 0 20px rgba(147, 51, 234, 0.2);
+            max-height: 100vh;
+            overflow-y: auto;
+            transition: all 0.3s ease;
+            z-index: 1000;
+            width: 250px;
+        }
+
+        .controls {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            padding: 20px;
+            background: rgba(26, 26, 46, 0.9);
+            border-top: 2px solid var(--secondary-color);
+            box-shadow: 0 -4px 20px rgba(147, 51, 234, 0.2);
+            transition: transform 0.3s ease;
+            z-index: 1000;
+        }
+
+        .logo-container {
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 0;
+            background: rgba(0, 0, 0, 0.5);
+            margin: 0 30px;
+            border-radius: 0;
+            width: 300px !important;
+            height: 300px !important;
+            min-width: 300px !important;
+            min-height: 300px !important;
+            max-width: 300px !important;
+            max-height: 300px !important;
+            flex: 0 0 300px !important;
+            transform: none !important;
+            order: 2;
+        }
+
+        .logo-container::before {
+            content: '';
+            position: absolute;
+            width: 300px !important;
+            height: 300px !important;
+            min-width: 300px !important;
+            min-height: 300px !important;
+            max-width: 300px !important;
+            max-height: 300px !important;
+            background: linear-gradient(
+                45deg,
+                #ff0000, #ff8000, #ffff00, #80ff00, #00ff00,
+                #00ff80, #00ffff, #0080ff, #0000ff, #8000ff,
+                #ff00ff, #ff0080, #ff0000
+            );
+            background-size: 200% 200%;
+            opacity: 0.3;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) !important;
+            animation: gradient 15s ease infinite;
+        }
+
+        @keyframes gradient {
+            0% {
+                background-position: 0% 50%;
+            }
+            50% {
+                background-position: 100% 50%;
+            }
+            100% {
+                background-position: 0% 50%;
+            }
+        }
+
+        .controls-logo {
+            position: relative;
+            width: 300px !important;
+            height: 300px !important;
+            min-width: 300px !important;
+            min-height: 300px !important;
+            max-width: 300px !important;
+            max-height: 300px !important;
+            object-fit: contain;
+            filter: url(#perlinNoise);
+            transition: none !important;
+            opacity: 0.8;
+            z-index: 1;
+            padding: 0;
+            mix-blend-mode: normal;
+            image-rendering: pixelated;
+            transform: scale(1.25) !important;
+        }
+
+        .controls-logo:hover {
+            transform: scale(1.05);
+            opacity: 1;
+        }
+
+        .controls.minimized {
+            transform: translateY(calc(100% - 15px));
+        }
+
+        .controls-header {
+            position: absolute;
+            top: -30px;
+            left: 0;
+            right: 0;
+            height: 30px;
+            background: rgba(26, 26, 46, 0.9);
+            border-top: 2px solid var(--secondary-color);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            font-size: 12px;
+            color: var(--primary-color);
+            text-transform: uppercase;
+            z-index: 1000;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 2px;
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--primary-color);
+            border-radius: 1px;
+            margin: 1px;
+            transition: all 0.3s ease;
+        }
+
+        .control-group:hover {
+            border-color: var(--secondary-color);
+            box-shadow: 0 0 10px rgba(147, 51, 234, 0.3);
+            background: rgba(147, 51, 234, 0.05);
+        }
+
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 70px;
+            height: 4px;
+            background: #2a2a3e;
+            outline: none;
+            opacity: 0.9;
+            transition: all 0.3s ease;
+            margin: 2px 0;
+            border: 1px solid var(--primary-color);
+            padding: 4px 0;
+        }
+
+        input[type=range]:hover {
+            border-color: var(--secondary-color);
+            box-shadow: 0 0 10px rgba(147, 51, 234, 0.3);
+        }
+
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 12px;
+            height: 12px;
+            background: var(--primary-color);
+            cursor: pointer;
+            border: 1px solid var(--text-color);
+            box-shadow: 0 0 5px rgba(147, 51, 234, 0.2);
+            transition: all 0.3s ease;
+        }
+
+        input[type=range]::-webkit-slider-thumb:hover {
+            background: var(--secondary-color);
+            box-shadow: 0 0 15px rgba(147, 51, 234, 0.5);
+        }
+
+        #start-button {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 10px 20px;
+            background-color: var(--primary-color);
+            color: var(--background-color);
+            border: none;
+            font-family: 'Press Start 2P', cursive;
+            font-size: 8px;
+            cursor: pointer;
+            box-shadow: 0 0 20px rgba(0, 255, 149, 0.3);
+            border: 2px solid var(--text-color);
+            transition: all 0.3s ease;
+        }
+
+        #start-button:hover {
+            background-color: var(--secondary-color);
+            border-color: var(--secondary-color);
+            box-shadow: 0 0 25px rgba(147, 51, 234, 0.5);
+        }
+
+        select {
+            background: var(--background-color);
+            color: var(--primary-color);
+            padding: 2px 4px;
+            border: 1px solid var(--primary-color);
+            border-radius: 0;
+            margin: 2px 0;
+            font-family: 'Press Start 2P', cursive;
+            font-size: 6px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            width: 70px;
+        }
+
+        select:hover {
+            border-color: var(--secondary-color) !important;
+            box-shadow: 0 0 15px rgba(147, 51, 234, 0.4);
+            background: rgba(147, 51, 234, 0.2) !important;
+        }
+
+        .pitch-controls.minimized, .modulator-controls.minimized {
+            width: 40px;
+            height: 40px;
+            overflow: hidden;
+            padding: 0;
+        }
+
+        .pitch-controls.minimized .minimize-button, .modulator-controls.minimized .minimize-button {
+            position: relative;
+            top: 0;
+            right: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        .minimize-button {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: #00ff95;
+            border: none;
+            color: #1a1a2e;
+            width: 30px;
+            height: 30px;
+            font-size: 20px;
+            line-height: 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px solid #fff;
+        }
+
+        .minimize-button:hover {
+            background: #9333ea;
+            color: white;
+        }
+
+        .controls-toggle {
+            margin-left: 10px;
+            transition: transform 0.3s ease;
+        }
+
+        .controls.minimized .controls-toggle {
+            transform: rotate(180deg);
+        }
+
+        .sphere-info {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(26, 26, 46, 0.9);
+            padding: 10px;
+            border: 2px solid #00ff95;
+            border-radius: 4px;
+            display: none;
+            font-size: 10px;
+            box-shadow: 0 0 15px rgba(147, 51, 234, 0.3);
+            transition: all 0.3s ease;
+        }
+
+        .sphere-info:hover {
+            border-color: #9333ea;
+            box-shadow: 0 0 20px rgba(147, 51, 234, 0.4);
+        }
+
+        .toggle-switch {
+            display: flex;
+            align-items: center;
+            margin: 2px 0;
+        }
+
+        .toggle-switch input[type="checkbox"] {
+            appearance: none;
+            width: 24px;
+            height: 12px;
+            background: #2a2a3e;
+            border-radius: 0;
+            position: relative;
+            cursor: pointer;
+            margin: 0 5px;
+            border: 1px solid var(--primary-color);
+            transition: all 0.3s ease;
+        }
+
+        .toggle-switch input[type="checkbox"]:checked {
+            background: #9333ea;
+            box-shadow: 0 0 10px rgba(147, 51, 234, 0.4);
+        }
+
+        .toggle-switch input[type="checkbox"]::before {
+            content: "";
+            width: 8px;
+            height: 8px;
+            background: white;
+            position: absolute;
+            top: 1px;
+            left: 1px;
+            transition: 0.2s;
+        }
+
+        .toggle-switch input[type="checkbox"]:checked::before {
+            left: 13px;
+        }
+
+        #clear-all {
+            background: #ff4444;
+            color: white;
+            border: 2px solid #fff;
+            padding: 6px 12px;
+            font-family: 'Press Start 2P', cursive;
+            font-size: 8px;
+            cursor: pointer;
+            margin-top: 10px;
+            text-transform: uppercase;
+            box-shadow: 0 0 10px rgba(255, 68, 68, 0.3);
+        }
+
+        #clear-all:hover {
+            background: #ff6666;
+            box-shadow: 0 0 20px rgba(255, 68, 68, 0.5);
+        }
+
+        .divider {
+            width: 100%;
+            height: 2px;
+            background: #00ff95;
+            margin: 10px 0;
+            box-shadow: 0 0 10px rgba(0, 255, 149, 0.3);
+        }
+
+        /* Add scrollbar styling */
+        .pitch-controls::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .pitch-controls::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        .pitch-controls::-webkit-scrollbar-thumb {
+            background: #00ff95;
+            border-radius: 3px;
+        }
+
+        .pitch-controls::-webkit-scrollbar-thumb:hover {
+            background: #9333ea;
+        }
+
+        /* Add hover effects for all interactive elements */
+        button:hover, select:hover, input[type=range]:hover, .toggle-switch:hover {
+            box-shadow: 0 0 15px rgba(147, 51, 234, 0.5);
+            border-color: #9333ea;
+        }
+
+        .sequencer-group {
+            padding: 4px;
+            margin: 0 3px;
+            min-width: 180px;
+        }
+
+        .sequencer-group h3 {
+            font-size: 7px;
+            margin: 0 0 3px 0;
+        }
+
+        .sequencer-group .control-group {
+            padding: 3px;
+            margin: 1px;
+        }
+
+        .sequencer-group label {
+            font-size: 6px;
+            margin-bottom: 1px;
+            color: var(--text-color);
+        }
+
+        .sequencer-group select {
+            font-size: 6px;
+            padding: 2px;
+            width: 70px;
+        }
+
+        .sequencer-group input[type=range] {
+            width: 70px;
+            margin-top: 2px;
+        }
+
+        .sequencer-group .toggle-switch {
+            margin: 4px 0;
+        }
+
+        .sequencer-group .toggle-switch label {
+            font-size: 6px;
+        }
+
+        .sequencer-group .section-header {
+            padding: 3px 4px;
+            font-size: 6px;
+        }
+
+        .sequencer-group .section-header label {
+            font-size: 7px;
+        }
+
+        .sequencer-group .collapsible-section {
+            margin-bottom: 6px;
+        }
+
+        /* Bottom controls specific adjustments */
+        .controls .control-group {
+            padding: 3px;
+            margin: 1px;
+        }
+
+        .controls label {
+            font-size: 6px;
+            margin-bottom: 1px;
+            color: var(--text-color);
+        }
+
+        .controls select {
+            font-size: 6px;
+            padding: 2px;
+            width: 70px;
+        }
+
+        .controls input[type=range] {
+            width: 70px;
+            margin-top: 2px;
+        }
+
+        .controls .toggle-switch {
+            margin: 4px 0;
+        }
+
+        .controls .toggle-switch label {
+            font-size: 6px;
+        }
+
+        .controls-header {
+            font-size: 7px;
+            padding: 3px 4px;
+        }
+
+        .controls {
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            padding: 15px;
+        }
+
+        .collapsible-section {
+            margin-bottom: 10px;
+        }
+
+        .section-header {
+            background: rgba(0, 0, 0, 0.5);
+            padding: 8px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border: 1px solid #00ff95;
+            transition: all 0.3s ease;
+        }
+
+        .section-header:hover {
+            border-color: #9333ea;
+            box-shadow: 0 0 15px rgba(147, 51, 234, 0.5);
+        }
+
+        .section-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out;
+        }
+
+        .section-content.open {
+            max-height: 1000px;
+            transition: max-height 0.5s ease-in;
+        }
+
+        .minimize-button {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: #00ff95;
+            border: none;
+            color: #1a1a2e;
+            width: 30px;
+            height: 30px;
+            font-size: 20px;
+            line-height: 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px solid #fff;
+        }
+
+        .minimize-button:hover {
+            background: #9333ea;
+            color: white;
+        }
+
+        .pitch-controls.minimized {
+            width: 40px;
+            height: 40px;
+            overflow: hidden;
+            padding: 0;
+        }
+
+        .pitch-controls.minimized .minimize-button {
+            position: relative;
+            top: 0;
+            right: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        .panel-header {
+            position: absolute;
+            top: -30px;
+            left: 0;
+            right: 0;
+            height: 30px;
+            background: rgba(26, 26, 46, 0.9);
+            border-top: 2px solid #9333ea;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            font-size: 12px;
+            color: #00ff95;
+            text-transform: uppercase;
+            z-index: 1000;
+            padding: 0 15px;
+        }
+
+        .panel-header:hover {
+            background: rgba(147, 51, 234, 0.2);
+        }
+
+        .minimize-button {
+            background: #00ff95;
+            border: none;
+            color: #1a1a2e;
+            width: 30px;
+            height: 30px;
+            font-size: 20px;
+            line-height: 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px solid #fff;
+        }
+
+        .minimize-button:hover {
+            background: #9333ea;
+            color: white;
+        }
+
+        .panel-title {
+            margin-right: 10px;
+        }
+
+        .lfo-target {
+            background: var(--primary-color);
+            color: var(--background-color);
+            padding: 8px;
+            margin: 10px 0;
+            text-align: center;
+            cursor: move;
+            border: 2px solid var(--text-color);
+            font-size: 10px;
+            transition: all 0.3s ease;
+            user-select: none;
+        }
+
+        .lfo-target:hover {
+            background: var(--secondary-color);
+            color: var(--text-color);
+            box-shadow: 0 0 15px var(--secondary-color);
+        }
+
+        .lfo-target.dragging {
+            opacity: 0.7;
+            transform: scale(0.95);
+        }
+
+        .lfo-value {
+            font-size: 6px;
+            color: #00ff95;
+            text-align: center;
+            margin-top: 2px;
+        }
+
+        .slider-target {
+            border: 2px dashed #9333ea !important;
+            box-shadow: 0 0 15px rgba(147, 51, 234, 0.5) !important;
+            transition: all 0.3s ease;
+        }
+
+        .slider-target:hover {
+            border-color: #9333ea;
+            box-shadow: 0 0 15px rgba(147, 51, 234, 0.5);
+        }
+
+        .lfo-connected {
+            border: 2px solid var(--primary-color) !important;
+            box-shadow: 0 0 15px var(--primary-color) !important;
+        }
+
+        .modulator-section {
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid #00ff95;
+            margin: 10px 0;
+            padding: 10px;
+            transition: all 0.3s ease;
+        }
+
+        .modulator-section:hover {
+            border-color: #9333ea;
+            box-shadow: 0 0 15px rgba(147, 51, 234, 0.3);
+        }
+
+        .modulator-header {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 5px 10px;
+            margin: -10px -10px 10px -10px;
+            border-bottom: 1px solid #00ff95;
+            font-size: 10px;
+            color: #00ff95;
+            text-transform: uppercase;
+        }
+
+        .modulator-header:hover {
+            background: rgba(147, 51, 234, 0.1);
+        }
+
+        .add-lfo-button {
+            background: #00ff95;
+            color: #1a1a2e;
+            padding: 8px;
+            margin: 10px;
+            text-align: center;
+            cursor: pointer;
+            border: 2px solid #fff;
+            font-size: 12px;
+            transition: all 0.3s ease;
+            user-select: none;
+        }
+
+        .add-lfo-button:hover {
+            background: #9333ea;
+            color: white;
+            box-shadow: 0 0 15px rgba(147, 51, 234, 0.5);
+        }
+
+        .remove-lfo {
+            background: none;
+            border: none;
+            color: #ff4444;
+            font-size: 16px;
+            cursor: pointer;
+            padding: 0 5px;
+            transition: all 0.3s ease;
+        }
+
+        .remove-lfo:hover {
+            color: #ff6666;
+            transform: scale(1.2);
+        }
+
+        .modulator-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        #lfo-container {
+            max-height: calc(70vh - 50px);
+            overflow-y: auto;
+        }
+
+        .pitch-controls .control-group {
+            padding: 3px;
+            margin: 1px;
+        }
+
+        .pitch-controls label {
+            font-size: 6px;
+            margin-bottom: 1px;
+            color: var(--text-color);
+        }
+
+        .pitch-controls select {
+            font-size: 6px;
+            padding: 2px;
+        }
+
+        .pitch-controls input[type=range] {
+            width: 70px;
+            margin-top: 2px;
+        }
+
+        .pitch-controls .toggle-switch {
+            margin: 4px 0;
+        }
+
+        .pitch-controls .toggle-switch label {
+            font-size: 6px;
+        }
+
+        .pitch-controls .section-header {
+            padding: 3px 4px;
+        }
+
+        .pitch-controls .section-header label {
+            font-size: 7px;
+        }
+
+        .pitch-controls .collapsible-section {
+            margin-bottom: 6px;
+        }
+
+        .pitch-controls #clear-all {
+            font-size: 7px;
+            padding: 3px 6px;
+        }
+
+        /* Adjust particle system controls specifically */
+        .pitch-controls #particle-count-slider,
+        .pitch-controls #particle-speed-slider,
+        .pitch-controls #swarm-cohesion-slider,
+        .pitch-controls #parallax-threshold-slider {
+            width: 120px;
+        }
+
+        .modulator-controls .control-group {
+            padding: 3px;
+            margin: 1px;
+        }
+
+        .modulator-controls label {
+            font-size: 6px;
+            margin-bottom: 1px;
+            color: var(--text-color);
+        }
+
+        .modulator-controls select {
+            font-size: 6px;
+            padding: 2px;
+        }
+
+        .modulator-controls input[type=range] {
+            width: 70px;
+            margin-top: 2px;
+        }
+
+        .modulator-controls .toggle-switch {
+            margin: 4px 0;
+        }
+
+        .modulator-controls .toggle-switch label {
+            font-size: 6px;
+        }
+
+        .modulator-controls .section-header {
+            padding: 3px 4px;
+        }
+
+        .modulator-controls .section-header label {
+            font-size: 7px;
+        }
+
+        .modulator-controls .collapsible-section {
+            margin-bottom: 6px;
+        }
+
+        .modulator-controls .add-lfo-button {
+            font-size: 7px;
+            padding: 3px 6px;
+            margin: 2px;
+        }
+
+        .modulator-controls .modulator-section {
+            padding: 6px;
+            margin: 4px 0;
+        }
+
+        .modulator-controls .modulator-header {
+            padding: 3px 4px;
+            margin: -6px -6px 6px -6px;
+            font-size: 7px;
+        }
+
+        .modulator-controls .lfo-target {
+            font-size: 6px;
+            padding: 3px;
+            margin: 2px 0;
+        }
+
+        .modulator-controls .lfo-value {
+            font-size: 6px;
+            margin-top: 1px;
+        }
+
+        .theme-controls {
+            position: absolute;
+            top: 0;
+            right: 0;
+            background: rgba(26, 26, 46, 0.9);
+            padding: 20px;
+            border-left: 2px solid var(--secondary-color);
+            box-shadow: -4px 0 20px rgba(147, 51, 234, 0.2);
+            max-height: 100vh;
+            overflow-y: auto;
+            transition: all 0.3s ease;
+            z-index: 1000;
+            width: 250px;
+        }
+
+        .theme-controls .control-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 2px;
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--primary-color);
+            border-radius: 1px;
+            margin: 1px;
+            transition: all 0.3s ease;
+        }
+
+        .theme-controls .control-group:hover {
+            border-color: var(--secondary-color);
+            box-shadow: 0 0 10px rgba(147, 51, 234, 0.3);
+            background: rgba(147, 51, 234, 0.05);
+        }
+
+        .theme-controls .control-group label {
+            font-size: 6px;
+            margin-bottom: 1px;
+            color: var(--text-color);
+        }
+
+        .theme-controls .control-group select {
+            font-size: 8px;
+            padding: 2px;
+            width: 70px;
+        }
+
+        .theme-controls .control-group select:hover {
+            border-color: var(--secondary-color) !important;
+            box-shadow: 0 0 15px rgba(147, 51, 234, 0.4);
+            background: rgba(147, 51, 234, 0.2) !important;
+        }
+
+        .theme-controls .control-group input[type=range] {
+            width: 70px;
+            margin-top: 2px;
+        }
+
+        .theme-controls .control-group .toggle-switch {
+            margin: 4px 0;
+        }
+
+        .theme-controls .control-group .toggle-switch label {
+            font-size: 6px;
+        }
+
+        .theme-controls .control-group .section-header {
+            padding: 3px 4px;
+            font-size: 6px;
+        }
+
+        .theme-controls .control-group .section-header label {
+            font-size: 7px;
+        }
+
+        .theme-controls .control-group .collapsible-section {
+            margin-bottom: 6px;
+        }
+
+        .theme-controls .control-group .add-lfo-button {
+            font-size: 7px;
+            padding: 3px 6px;
+            margin: 2px;
+        }
+
+        .theme-controls .control-group .modulator-section {
+            padding: 6px;
+            margin: 4px 0;
+        }
+
+        .theme-controls .control-group .modulator-header {
+            padding: 3px 4px;
+            margin: -6px -6px 6px -6px;
+            font-size: 7px;
+        }
+
+        .theme-controls .control-group .lfo-target {
+            font-size: 6px;
+            padding: 3px;
+            margin: 2px 0;
+        }
+
+        .theme-controls .control-group .lfo-value {
+            font-size: 6px;
+            margin-top: 1px;
+        }
+
+        .theme-controls .control-group .theme-selector {
+            width: 100%;
+        }
+
+        .theme-controls .control-group .theme-selector option {
+            font-size: 6px;
+        }
+
+        .theme-controls .control-group .theme-selector option:hover {
+            background: rgba(147, 51, 234, 0.2);
+        }
+
+        .theme-controls .control-group .theme-selector option:checked {
+            background: #9333ea;
+        }
+
+        .value-display {
+            display: inline-block;
+            margin-left: 10px;
+            min-width: 30px;
+            font-size: 6px;
+            color: var(--text-color);
+            opacity: 0.8;
+        }
+
+        .slider-value {
+            display: inline-block;
+            margin-left: 8px;
+            min-width: 50px;
+            font-size: 12px;
+            font-family: Arial, sans-serif;
+            color: var(--text-color);
+            opacity: 0.9;
+            vertical-align: middle;
+        }
+
+        .play-pause-button {
+            background: var(--primary-color);
+            color: var(--background-color);
+            border: none;
+            border-radius: 4px;
+            padding: 8px 16px;
+            font-size: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            box-shadow: 0 0 10px rgba(0, 255, 149, 0.3);
+        }
+
+        .play-pause-button:hover {
+            background: var(--secondary-color);
+            box-shadow: 0 0 15px rgba(147, 51, 234, 0.4);
+            transform: translateY(-1px);
+        }
+
+        .play-pause-button.playing {
+            background: #ff6b6b;
+        }
+
+        .add-envelope-button {
+            background: var(--primary-color);
+            color: var(--background-color);
+            padding: 8px;
+            margin: 10px;
+            text-align: center;
+            cursor: pointer;
+            border: 2px solid var(--text-color);
+            font-size: 12px;
+            transition: all 0.3s ease;
+            user-select: none;
+        }
+
+        .add-envelope-button:hover {
+            background: var(--secondary-color);
+            color: var(--text-color);
+            box-shadow: 0 0 15px var(--secondary-color);
+        }
+
+        .modulator-section.envelope {
+            padding: 15px;
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--secondary-color);
+            margin: 0;
+        }
+
+        #envelope-container .section-header {
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--secondary-color);
+            padding: 10px;
+            margin-bottom: 0;
+        }
+
+        #envelope-container .section-header:hover {
+            background: rgba(0, 0, 0, 0.3);
+            box-shadow: 0 0 15px var(--secondary-color);
+        }
+
+        #envelope-container .section-content {
+            border: 1px solid var(--secondary-color);
+            border-top: none;
+            padding: 0;
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        .trigger-button {
+            background: var(--secondary-color);
+            color: var(--text-color);
+            border: none;
+            padding: 8px 16px;
+            margin: 5px 0;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            width: 100%;
+            border: 2px solid transparent;
+        }
+
+        .trigger-button:hover {
+            background: var(--primary-color);
+            color: var(--background-color);
+            border-color: var(--text-color);
+        }
+
+        .modulator-section.envelope .section-header {
+            background: rgba(0, 0, 0, 0.2);
+            border-color: var(--secondary-color);
+        }
+
+        .modulator-section.envelope .section-header:hover {
+            background: rgba(0, 0, 0, 0.3);
+        }
+
+        .envelope-canvas {
+            width: 100%;
+            height: 80px;
+            background: rgba(0, 0, 0, 0.3);
+            margin: 15px 0;
+            border: 1px solid var(--secondary-color);
+            border-radius: 4px;
+            box-shadow: 0 0 5px var(--secondary-color);
+            transition: all 0.3s ease;
+        }
+
+        .envelope-canvas:hover {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 10px var(--primary-color);
+        }
+
+        .envelope-canvas.connected {
+            border-color: var(--secondary-color);
+            box-shadow: 0 0 15px var(--secondary-color);
+        }
+
+        #envelope-container .lfo-value {
+            color: var(--secondary-color);
+        }
+
+        .envelope-indicator {
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--secondary-color);
+            border-radius: 4px;
+        }
+
+        .envelope-disconnect-button {
+            color: var(--secondary-color);
+            border: 1px solid var(--secondary-color);
+            background: none;
+            cursor: pointer;
+            font-size: 20px;
+            padding: 5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 12px;
+            transition: all 0.3s ease;
+            font-family: 'Press Start 2P', cursive;
+        }
+
+        .envelope-disconnect-button:hover {
+            background: rgba(0, 0, 0, 0.2);
+            box-shadow: 0 0 5px var(--secondary-color);
+        }
+
+        .add-envelope-button {
+            background: var(--primary-color);
+            color: var(--background-color);
+            padding: 8px;
+            margin: 10px;
+            text-align: center;
+            cursor: pointer;
+            border: 2px solid var(--text-color);
+            font-size: 12px;
+            transition: all 0.3s ease;
+            user-select: none;
+        }
+
+        .add-envelope-button:hover {
+            background: var(--secondary-color);
+            color: var(--text-color);
+            box-shadow: 0 0 15px var(--secondary-color);
+        }
+
+        .lfo-visual-container {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            z-index: 10;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 2px 5px;
+            border-radius: 3px;
+        }
+
+        .waveform-canvas {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 3px;
+            border: 1px solid rgba(0, 255, 149, 0.2);
+            box-shadow: 0 0 5px rgba(0, 255, 149, 0.2);
+            z-index: 1;
+        }
+
+        .target-list {
+            margin-top: 5px;
+            font-size: 8px;
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .target-item {
+            background: rgba(0, 0, 0, 0.2);
+            padding: 2px 5px;
+            margin: 2px 0;
+            border-radius: 2px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .lfo-target-hover {
+            border: 2px dashed var(--secondary-color) !important;
+            box-shadow: 0 0 15px var(--secondary-color) !important;
+        }
+
+        .lfo-disconnect-button {
+            background: none;
+            border: none;
+            color: #ff4444;
+            font-size: 16px;
+            cursor: pointer;
+            padding: 2px 6px;
+            border-radius: 3px;
+            transition: all 0.2s ease;
+            margin-left: 2px;
+        }
+
+        .lfo-disconnect-button:hover {
+            background: rgba(255, 68, 68, 0.2);
+            color: #ff6666;
+            transform: scale(1.1);
+        }
+
+        /* Lock SVG filter size */
+        #perlinNoise {
+            x: -12.5% !important;
+            y: -12.5% !important;
+            width: 125% !important;
+            height: 125% !important;
+        }
+
+        .global-controls {
+            background: none;
+            border: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        #sequence-visualization {
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--primary-color);
+            border-radius: 50%;
+            box-shadow: 0 0 20px rgba(147, 51, 234, 0.2);
+            transition: all 0.3s ease;
+            margin: 20px auto;
+            display: block;
+            width: 350px;
+            height: 350px;
+        }
+
+        #sequence-visualization:hover {
+            border-color: var(--secondary-color);
+            box-shadow: 0 0 30px rgba(147, 51, 234, 0.4);
+        }
+
+        .envelope-target {
+            background: var(--secondary-color);
+            color: var(--text-color);
+            padding: 8px;
+            margin: 10px 0;
+            text-align: center;
+            cursor: move;
+            border: 2px solid var(--text-color);
+            font-size: 10px;
+            transition: all 0.3s ease;
+            user-select: none;
+        }
+
+        .envelope-target:hover {
+            background: var(--primary-color);
+            color: var(--background-color);
+            box-shadow: 0 0 15px var(--primary-color);
+        }
+
+        .envelope-target.dragging {
+            opacity: 0.7;
+            transform: scale(0.95);
+        }
+
+        .envelope-target-hover {
+            border: 2px dashed var(--primary-color) !important;
+            box-shadow: 0 0 15px var(--primary-color) !important;
+        }
+
+        .envelope-connected {
+            border: 2px solid var(--secondary-color) !important;
+            box-shadow: 0 0 15px var(--secondary-color) !important;
+        }
+
+        .modulator-controls .add-envelope-button {
+            font-size: 7px;
+            padding: 3px 6px;
+            margin: 2px;
+        }
+
+        .pop-out-button {
+            background: #00ff95;
+            color: #1a1a2e;
+            padding: 6px;
+            margin: 3px;
+            text-align: center;
+            cursor: pointer;
+            font-family: 'Press Start 2P', cursive;
+            border: 2px solid #fff;
+            transition: all 0.3s ease;
+            user-select: none;
+            font-size: 8px;
+        }
+
+        .pop-out-button:hover {
+            background: #9333ea;
+            color: white;
+            box-shadow: 0 0 15px rgba(147, 51, 234, 0.5);
+        }
+
+        /* Remove all .scene-controls related styles */
+        .scene-controls,
+        .scene-controls .control-group,
+        .scene-controls label,
+        .scene-controls .control-select,
+        .scene-controls .control-select:hover,
+        .scene-controls .control-select:focus {
+            display: none;
+        }
+
+        .add-sequencer-button {
+            background: var(--primary-color);
+            color: var(--background-color);
+            padding: 8px 16px;
+            border: 2px solid var(--text-color);
+            font-family: 'Press Start 2P', cursive;
+            font-size: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            box-shadow: 0 0 10px rgba(0, 255, 149, 0.3);
+        }
+
+        .add-sequencer-button:hover {
+            background: var(--secondary-color);
+            color: var(--text-color);
+            box-shadow: 0 0 15px rgba(147, 51, 234, 0.4);
+            transform: translateY(-1px);
+        }
+
+        .export-logs-button {
+            background: var(--accent-color);
+            color: var(--background-color);
+            padding: 8px 16px;
+            border: 2px solid var(--text-color);
+            font-family: 'Press Start 2P', cursive;
+            font-size: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            box-shadow: 0 0 10px rgba(255, 165, 0, 0.3);
+        }
+
+        .export-logs-button:hover {
+            background: var(--secondary-color);
+            color: var(--text-color);
+            box-shadow: 0 0 15px rgba(255, 165, 0, 0.4);
+            transform: translateY(-1px);
+        }
+
+        /* Remove the old button styles */
+        #addSequencerBtn {
+            position: static;
+            right: auto;
+            top: auto;
+            z-index: auto;
+        }
+    </style>
+</head>
+<body>
+    <svg style="position: absolute; width: 0; height: 0;">
+        <defs>
+            <filter id="perlinNoise" x="0" y="0" width="100%" height="100%">
+                <!-- Slow evolving base noise -->
+                <feTurbulence 
+                    type="turbulence" 
+                    baseFrequency="0.008 0.008" 
+                    numOctaves="4" 
+                    seed="1" 
+                    result="noise1">
+                    <animate 
+                        attributeName="baseFrequency" 
+                        from="0.008 0.008" 
+                        to="0.012 0.012" 
+                        dur="8s" 
+                        repeatCount="indefinite" 
+                        values="0.008 0.008;0.012 0.012;0.008 0.008"/>
+                    <animate
+                        attributeName="seed"
+                        from="1"
+                        to="2"
+                        dur="6s"
+                        repeatCount="indefinite"/>
+                </feTurbulence>
+
+                <!-- Medium speed detail noise -->
+                <feTurbulence 
+                    type="turbulence" 
+                    baseFrequency="0.015 0.015" 
+                    numOctaves="2" 
+                    seed="2" 
+                    result="noise2">
+                    <animate 
+                        attributeName="baseFrequency" 
+                        from="0.015 0.015" 
+                        to="0.025 0.025" 
+                        dur="14s" 
+                        repeatCount="indefinite" 
+                        values="0.015 0.015;0.025 0.025;0.015 0.015"/>
+                    <animate
+                        attributeName="seed"
+                        from="2"
+                        to="3"
+                        dur="13s"
+                        repeatCount="indefinite"/>
+                </feTurbulence>
+
+                <!-- Fast micro-detail noise -->
+                <feTurbulence 
+                    type="turbulence" 
+                    baseFrequency="0.05 0.05" 
+                    numOctaves="1" 
+                    seed="3" 
+                    result="noise3">
+                    <animate 
+                        attributeName="baseFrequency" 
+                        from="0.05 0.05" 
+                        to="0.08 0.08" 
+                        dur="12s" 
+                        repeatCount="indefinite" 
+                        values="0.05 0.05;0.08 0.08;0.05 0.05"/>
+                    <animate
+                        attributeName="seed"
+                        from="3"
+                        to="4"
+                        dur="15s"
+                        repeatCount="indefinite"/>
+                </feTurbulence>
+
+                <!-- Combine all noise layers -->
+                <feComposite 
+                    operator="arithmetic" 
+                    in="noise1" 
+                    in2="noise2" 
+                    k1="0.5" 
+                    k2="0.5" 
+                    result="noise12"/>
+                <feComposite 
+                    operator="arithmetic" 
+                    in="noise12" 
+                    in2="noise3" 
+                    k1="0.7" 
+                    k2="0.3" 
+                    result="combinedNoise"/>
+
+                <!-- Create strong displacement -->
+                <feDisplacementMap 
+                    in="SourceGraphic" 
+                    in2="combinedNoise"
+                    scale="20" 
+                    xChannelSelector="R" 
+                    yChannelSelector="G"/>
+
+                <!-- Add motion blur for smoother transitions -->
+                <feGaussianBlur stdDeviation="0.5" result="blur"/>
+                <feBlend
+                    in="SourceGraphic"
+                    in2="blur"
+                    mode="multiply"
+                    result="blended"/>
+
+                <!-- Final compositing -->
+                <feComposite 
+                    in="blended" 
+                    in2="SourceGraphic" 
+                    operator="arithmetic" 
+                    k1="0.8" 
+                    k2="0.2" 
+                    k3="0" 
+                    k4="0"/>
+            </filter>
+        </defs>
+    </svg>
+    <div id="canvas-container">
+        <button id="start-button">Start Audio</button>
+        <div class="pitch-controls">
+            <button class="minimize-button">−</button>
+            <div class="control-group theme-selector-group">
+                <label>Theme</label>
+                <select id="theme-selector">
+                    <option value="luminous">Luminous</option>
+                    <option value="cyberpunk">Cyberpunk</option>
+                    <option value="sunset">Sunset</option>
+                    <option value="forest">Forest</option>
+                    <option value="ocean">Ocean</option>
+                    <option value="desert">Desert</option>
+                    <option value="neon">Neon</option>
+                    <option value="monochrome">Monochrome</option>
+                    <option value="pastel">Pastel</option>
+                    <option value="volcanic">Volcanic</option>
+                    <option value="arctic">Arctic</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label>Shape Type</label>
+                <select id="shape-select" class="control-input">
+                    <option value="random">Random</option>
+                    <option value="polyhedron">Polyhedron</option>
+                    <option value="crystal">Crystal</option>
+                    <option value="octahedron">Octahedron</option>
+                    <option value="bulbous_sphere">Bulbous Sphere</option>
+                    <option value="spiky_ball">Spiky Ball</option>
+                    <option value="organic_cube">Organic Cube</option>
+                    <option value="coral_form">Coral Form</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <button class="pop-out-button">Pop Out Scene</button>
+            </div>
+
+            <div class="collapsible-section">
+                <div class="section-header">
+                    <label>Camera</label>
+                    <span class="toggle-icon">▶</span>
+                </div>
+                <div class="section-content">
+                    <div class="control-group">
+                        <label>Rotation Speed</label>
+                        <input type="range" id="rotation-speed" min="0" max="100" value="0">
+                        <span class="slider-value"></span>
+                    </div>
+                    <div class="control-group">
+                        <label>Rotation Direction</label>
+                        <input type="range" id="rotation-direction" min="-100" max="100" value="0">
+                        <span class="slider-value"></span>
+                    </div>
+                    <div class="control-group">
+                        <label>Camera Zoom</label>
+                        <input type="range" id="camera-zoom" min="1" max="10" value="3" step="0.1">
+                        <span class="slider-value"></span>
+                    </div>
+                    <div class="control-group">
+                        <label>Camera Angle</label>
+                        <input type="range" id="camera-angle" min="0" max="90" value="45" step="1">
+                        <span class="slider-value"></span>
+                    </div>
+                    <div class="control-group">
+                        <label>Glow Intensity</label>
+                        <input type="range" id="glow-intensity" min="0" max="1" value="0.6" step="0.1">
+                        <span class="slider-value"></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="collapsible-section">
+                <div class="section-header">
+                    <label>Audio Settings</label>
+                    <span class="toggle-icon">▶</span>
+                </div>
+                <div class="section-content">
+                    <div class="control-group">
+                        <div class="toggle-switch">
+                            <label>Internal Audio</label>
+                            <input type="checkbox" id="internal-audio-toggle">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="collapsible-section">
+                <div class="section-header">
+                    <label>MIDI Settings</label>
+                    <span class="toggle-icon">▶</span>
+                </div>
+                <div class="section-content">
+                    <div class="control-group">
+                        <div class="toggle-switch">
+                            <label>MIDI Output</label>
+                            <input type="checkbox" id="midi-output-toggle" checked>
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <label>MIDI Channels</label>
+                        <div style="display: flex; gap: 10px; margin-top: 5px;">
+                            <div>
+                                <label style="font-size: 12px;">Seq 1</label>
+                                <select id="midi-channel-1" style="width: 70px">
+                                    <option value="0">Ch 1</option>
+                                    <option value="1">Ch 2</option>
+                                    <option value="2">Ch 3</option>
+                                    <option value="3">Ch 4</option>
+                                    <option value="4">Ch 5</option>
+                                    <option value="5">Ch 6</option>
+                                    <option value="6">Ch 7</option>
+                                    <option value="7">Ch 8</option>
+                                    <option value="8">Ch 9</option>
+                                    <option value="9">Ch 10</option>
+                                    <option value="10">Ch 11</option>
+                                    <option value="11">Ch 12</option>
+                                    <option value="12">Ch 13</option>
+                                    <option value="13">Ch 14</option>
+                                    <option value="14">Ch 15</option>
+                                    <option value="15">Ch 16</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="font-size: 12px;">Seq 2</label>
+                                <select id="midi-channel-2" style="width: 70px">
+                                    <option value="0">Ch 1</option>
+                                    <option value="1" selected>Ch 2</option>
+                                    <option value="2">Ch 3</option>
+                                    <option value="3">Ch 4</option>
+                                    <option value="4">Ch 5</option>
+                                    <option value="5">Ch 6</option>
+                                    <option value="6">Ch 7</option>
+                                    <option value="7">Ch 8</option>
+                                    <option value="8">Ch 9</option>
+                                    <option value="9">Ch 10</option>
+                                    <option value="10">Ch 11</option>
+                                    <option value="11">Ch 12</option>
+                                    <option value="12">Ch 13</option>
+                                    <option value="13">Ch 14</option>
+                                    <option value="14">Ch 15</option>
+                                    <option value="15">Ch 16</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="collapsible-section">
+                <div class="section-header">
+                    <label>Particle System</label>
+                    <span class="toggle-icon">▶</span>
+                </div>
+                <div class="section-content">
+                    <div class="control-group">
+                        <div class="toggle-switch">
+                            <label>Particle System</label>
+                            <input type="checkbox" id="particle-system-toggle" checked>
+                        </div>
+                        <div class="toggle-switch">
+                            <label>Parallax</label>
+                            <input type="checkbox" id="line-connections-toggle" checked>
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <label>Particle Count</label>
+                        <input type="range" id="particle-count-slider" min="10" max="500" value="50" style="width: 150px;">
+                        <span class="slider-value"></span>
+                    </div>
+                    <div class="control-group">
+                        <label>Particle Speed</label>
+                        <input type="range" id="particle-speed-slider" min="0.1" max="2" value="0.5" step="0.1" style="width: 150px;">
+                        <span class="slider-value"></span>
+                    </div>
+                    <div class="control-group">
+                        <label>Swarm Cohesion</label>
+                        <input type="range" id="swarm-cohesion-slider" min="0.1" max="100" value="1" step="0.1" style="width: 150px;">
+                        <span class="slider-value"></span>
+                    </div>
+                    <div class="control-group">
+                        <label>Particle Layers</label>
+                        <input type="range" id="parallax-threshold-slider" min="1" max="5" value="3" style="width: 150px;">
+                        <span class="slider-value"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="controls">
+            <div class="controls-header">
+                Sequencer Controls <span class="controls-toggle">▲</span>
+            </div>
+            <div class="logo-container">
+                <svg style="position: absolute; width: 0; height: 0;">
+                    <defs>
+                        <filter id="perlinNoise" x="0" y="0" width="100%" height="100%">
+                            <!-- Slow evolving base noise -->
+                            <feTurbulence 
+                                type="turbulence" 
+                                baseFrequency="0.008 0.008" 
+                                numOctaves="4" 
+                                seed="1" 
+                                result="noise1">
+                                <animate 
+                                    attributeName="baseFrequency" 
+                                    from="0.008 0.008" 
+                                    to="0.012 0.012" 
+                                    dur="8s" 
+                                    repeatCount="indefinite" 
+                                    values="0.008 0.008;0.012 0.012;0.008 0.008"/>
+                                <animate
+                                    attributeName="seed"
+                                    from="1"
+                                    to="2"
+                                    dur="6s"
+                                    repeatCount="indefinite"/>
+                            </feTurbulence>
+
+                            <!-- Medium speed detail noise -->
+                            <feTurbulence 
+                                type="turbulence" 
+                                baseFrequency="0.015 0.015" 
+                                numOctaves="2" 
+                                seed="2" 
+                                result="noise2">
+                                <animate 
+                                    attributeName="baseFrequency" 
+                                    from="0.015 0.015" 
+                                    to="0.025 0.025" 
+                                    dur="14s" 
+                                    repeatCount="indefinite" 
+                                    values="0.015 0.015;0.025 0.025;0.015 0.015"/>
+                                <animate
+                                    attributeName="seed"
+                                    from="2"
+                                    to="3"
+                                    dur="13s"
+                                    repeatCount="indefinite"/>
+                            </feTurbulence>
+
+                            <!-- Fast micro-detail noise -->
+                            <feTurbulence 
+                                type="turbulence" 
+                                baseFrequency="0.05 0.05" 
+                                numOctaves="1" 
+                                seed="3" 
+                                result="noise3">
+                                <animate 
+                                    attributeName="baseFrequency" 
+                                    from="0.05 0.05" 
+                                    to="0.08 0.08" 
+                                    dur="12s" 
+                                    repeatCount="indefinite" 
+                                    values="0.05 0.05;0.08 0.08;0.05 0.05"/>
+                                <animate
+                                    attributeName="seed"
+                                    from="3"
+                                    to="4"
+                                    dur="15s"
+                                    repeatCount="indefinite"/>
+                            </feTurbulence>
+
+                            <!-- Combine all noise layers -->
+                            <feComposite 
+                                operator="arithmetic" 
+                                in="noise1" 
+                                in2="noise2" 
+                                k1="0.5" 
+                                k2="0.5" 
+                                result="noise12"/>
+                            <feComposite 
+                                operator="arithmetic" 
+                                in="noise12" 
+                                in2="noise3" 
+                                k1="0.7" 
+                                k2="0.3" 
+                                result="combinedNoise"/>
+
+                            <!-- Create strong displacement -->
+                            <feDisplacementMap 
+                                in="SourceGraphic" 
+                                in2="combinedNoise"
+                                scale="100" 
+                                xChannelSelector="R" 
+                                yChannelSelector="G"/>
+
+                            <!-- Add motion blur for smoother transitions -->
+                            <feGaussianBlur stdDeviation="0.5" result="blur"/>
+                            <feBlend
+                                in="SourceGraphic"
+                                in2="blur"
+                                mode="multiply"
+                                result="blended"/>
+
+                            <!-- Final compositing -->
+                            <feComposite 
+                                in="blended" 
+                                in2="SourceGraphic" 
+                                operator="arithmetic" 
+                                k1="0.8" 
+                                k2="0.2" 
+                                k3="0" 
+                                k4="0"/>
+                        </filter>
+                    </defs>
+                </svg>
+                <img src="logo.ico" alt="Sequencer Logo" class="controls-logo">
+            </div>
+            <canvas id="sequence-visualization"></canvas>
+            <div style="display: flex; justify-content: center; margin: 10px 0; gap: 10px;">
+                <button class="add-sequencer-button">Add Sequencer</button>
+                <button id="export-logs-button" class="export-logs-button">Save Logs As...</button>
+                <button id="download-logs-button" class="export-logs-button" style="background: var(--secondary-color);">Download Logs</button>
+            </div>
+            <div class="sequencer-group">
+                <h3>Sequencer 1</h3>
+                <div class="control-group">
+                    <button id="play-pause-button-1" class="play-pause-button">Stop</button>
+                </div>
+                <div class="control-group">
+                    <label>Velocity</label>
+                    <input type="range" id="velocity-slider-1" min="0" max="127" value="100">
+                    <span id="velocity-value-1" class="slider-value"></span>
+                </div>
+                <div class="control-group">
+                    <label>Probability</label>
+                    <input type="range" id="probability-slider-1" min="0" max="100" value="100">
+                    <span class="slider-value"></span>
+                </div>
+                <div class="control-group">
+                    <label class="toggle-label">
+                        <input type="checkbox" id="chord-toggle-1"> Chord Mode
+                    </label>
+                </div>
+                <div class="control-group chord-controls-1" style="display: none;">
+                    <label>Chord Type:</label>
+                    <select id="chord-type-1">
+                        <option value="major">Major Triad</option>
+                        <option value="minor">Minor Triad</option>
+                        <option value="diminished">Diminished Triad</option>
+                        <option value="augmented">Augmented Triad</option>
+                        <option value="major7">Major 7th</option>
+                        <option value="minor7">Minor 7th</option>
+                        <option value="dominant7">Dominant 7th</option>
+                        <option value="diminished7">Diminished 7th</option>
+                        <option value="halfDiminished7">Half-Diminished 7th</option>
+                    </select>
+                </div>
+                <div class="collapsible-section">
+                    <div class="section-header">
+                        <label>Arp Controls</label>
+                        <span class="toggle-icon">▶</span>
+                    </div>
+                    <div class="section-content">
+                        <div class="control-group">
+                            <div class="toggle-switch">
+                                <label>Arp</label>
+                                <input type="checkbox" id="arp-toggle-1">
+                            </div>
+                        </div>
+                        <div class="control-group">
+                            <label>Pattern</label>
+                            <select id="arp-pattern-1">
+                                <option value="up">Up</option>
+                                <option value="down">Down</option>
+                                <option value="updown">Up/Down</option>
+                                <option value="random">Random</option>
+                            </select>
+                        </div>
+                        <div class="control-group">
+                            <label>Division</label>
+                            <select id="arp-division-1">
+                                <option value="2">8th Notes</option>
+                                <option value="4" selected>16th Notes</option>
+                                <option value="8">32nd Notes</option>
+                                <option value="3">8th Note Triplets</option>
+                                <option value="6">16th Note Triplets</option>
+                            </select>
+                        </div>
+                        <div class="control-group">
+                            <label>Octave Range</label>
+                            <input type="range" id="arp-octave-1" min="1" max="4" value="1">
+                            <span class="slider-value"></span>
+                        </div>
+                        <div class="control-group">
+                            <label>Gate Length</label>
+                            <input type="range" id="arp-gate-1" min="10" max="90" value="50">
+                            <span class="slider-value"></span>
+                        </div>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label>Beats</label>
+                    <input type="range" id="beats-slider" min="0" max="32" value="16">
+                    <span class="slider-value"></span>
+                </div>
+                <div class="control-group">
+                    <label>Steps</label>
+                    <input type="range" id="steps-slider" min="1" max="32" value="16">
+                    <span class="slider-value"></span>
+                </div>
+                <div class="control-group">
+                    <label>Mode</label>
+                    <select id="sequence-mode-1">
+                        <option value="forward">Forward</option>
+                        <option value="backward">Backward</option>
+                        <option value="pingpong">Ping Pong</option>
+                        <option value="random">Random</option>
+                        <option value="brownian">Brownian</option>
+                        <option value="spiral">Spiral</option>
+                        <option value="pendulum">Pendulum</option>
+                        <option value="skipTwo">Skip Two</option>
+                        <option value="fibonacci">Fibonacci</option>
+                        <option value="randomWalk">Random Walk</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label>Brownian Range</label>
+                    <input type="range" id="brownian-range-1" min="1" max="4" value="1">
+                    <span class="slider-value"></span>
+                </div>
+            </div>
+
+            <div class="sequencer-group">
+                <h3>Sequencer 2</h3>
+                <div class="control-group">
+                    <button id="play-pause-button-2" class="play-pause-button">Stop</button>
+                </div>
+                <div class="control-group">
+                    <label>Velocity</label>
+                    <input type="range" id="velocity-slider-2" min="0" max="127" value="100">
+                    <span id="velocity-value-2" class="slider-value"></span>
+                </div>
+                <div class="control-group">
+                    <label>Probability</label>
+                    <input type="range" id="probability-slider-2" min="0" max="100" value="100">
+                    <span class="slider-value"></span>
+                </div>
+                <div class="control-group">
+                    <label class="toggle-label">
+                        <input type="checkbox" id="chord-toggle-2"> Chord Mode
+                    </label>
+                </div>
+                <div class="control-group chord-controls-2" style="display: none;">
+                    <label>Chord Type:</label>
+                    <select id="chord-type-2">
+                        <option value="major">Major Triad</option>
+                        <option value="minor">Minor Triad</option>
+                        <option value="diminished">Diminished Triad</option>
+                        <option value="augmented">Augmented Triad</option>
+                        <option value="major7">Major 7th</option>
+                        <option value="minor7">Minor 7th</option>
+                        <option value="dominant7">Dominant 7th</option>
+                        <option value="diminished7">Diminished 7th</option>
+                        <option value="halfDiminished7">Half-Diminished 7th</option>
+                    </select>
+                </div>
+                <div class="collapsible-section">
+                    <div class="section-header">
+                        <label>Arp Controls</label>
+                        <span class="toggle-icon">▶</span>
+                    </div>
+                    <div class="section-content">
+                        <div class="control-group">
+                            <div class="toggle-switch">
+                                <label>Arp</label>
+                                <input type="checkbox" id="arp-toggle-2">
+                            </div>
+                        </div>
+                        <div class="control-group">
+                            <label>Pattern</label>
+                            <select id="arp-pattern-2">
+                                <option value="up">Up</option>
+                                <option value="down">Down</option>
+                                <option value="updown">Up/Down</option>
+                                <option value="random">Random</option>
+                            </select>
+                        </div>
+                        <div class="control-group">
+                            <label>Division</label>
+                            <select id="arp-division-2">
+                                <option value="2">8th Notes</option>
+                                <option value="4" selected>16th Notes</option>
+                                <option value="8">32nd Notes</option>
+                                <option value="3">8th Note Triplets</option>
+                                <option value="6">16th Note Triplets</option>
+                            </select>
+                        </div>
+                        <div class="control-group">
+                            <label>Octave Range</label>
+                            <input type="range" id="arp-octave-2" min="1" max="4" value="1">
+                            <span class="slider-value"></span>
+                        </div>
+                        <div class="control-group">
+                            <label>Gate Length</label>
+                            <input type="range" id="arp-gate-2" min="10" max="90" value="50">
+                            <span class="slider-value"></span>
+                        </div>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label>Beats</label>
+                    <input type="range" id="beats-slider2" min="0" max="32" value="16">
+                    <span class="slider-value"></span>
+                </div>
+                <div class="control-group">
+                    <label>Steps</label>
+                    <input type="range" id="steps-slider2" min="1" max="32" value="16">
+                    <span class="slider-value"></span>
+                </div>
+                <div class="control-group">
+                    <label>Mode</label>
+                    <select id="sequence-mode-2">
+                        <option value="forward">Forward</option>
+                        <option value="backward">Backward</option>
+                        <option value="pingpong">Ping Pong</option>
+                        <option value="random">Random</option>
+                        <option value="brownian">Brownian</option>
+                        <option value="spiral">Spiral</option>
+                        <option value="pendulum">Pendulum</option>
+                        <option value="skipTwo">Skip Two</option>
+                        <option value="fibonacci">Fibonacci</option>
+                        <option value="randomWalk">Random Walk</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label>Brownian Range</label>
+                    <input type="range" id="brownian-range-2" min="1" max="4" value="1">
+                    <span class="slider-value"></span>
+                </div>
+            </div>
+
+            <div style="display: flex; flex-direction: column; align-items: stretch; margin-top: -10px;">
+                <h3 style="font-size: 7px; margin: 10px 0 5px 10px; color: var(--text-color);">Global Controls</h3>
+                <div class="global-controls sequencer-group">
+                    <div class="control-group">
+                        <label>BPM</label>
+                        <input type="range" id="bpm-slider" min="60" max="200" value="120">
+                        <span class="slider-value"></span>
+                    </div>
+
+                    <div class="control-group">
+                        <label>Root Note</label>
+                        <select id="root-note">
+                            <option value="60">C</option>
+                            <option value="61">C#</option>
+                            <option value="62">D</option>
+                            <option value="63">D#</option>
+                            <option value="64">E</option>
+                            <option value="65">F</option>
+                            <option value="66">F#</option>
+                            <option value="67">G</option>
+                            <option value="68">G#</option>
+                            <option value="69">A</option>
+                            <option value="70">A#</option>
+                            <option value="71">B</option>
+                        </select>
+                    </div>
+
+                    <div class="control-group">
+                        <label>Scale</label>
+                        <select id="scale-type">
+                            <option value="major">Major</option>
+                            <option value="minor" selected>Minor</option>
+                            <option value="pentatonic">Pentatonic</option>
+                            <option value="chromatic">Chromatic</option>
+                            <option value="harmonicMinor">Harmonic Minor</option>
+                            <option value="dorian">Dorian</option>
+                            <option value="phrygian">Phrygian</option>
+                            <option value="wholeTone">Whole Tone</option>
+                            <option value="diminished">Diminished</option>
+                        </select>
+                    </div>
+
+                    <div class="control-group">
+                        <label>Octave Range</label>
+                        <input type="range" id="octave-range" min="1" max="3" value="3">
+                        <span class="slider-value"></span>
+                    </div>
+                    <div class="control-group">
+                        <button id="clear-all">Clear All Steps</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="modulator-controls">
+            <button class="minimize-button">−</button>
+            <div class="add-lfo-button">+ Add LFO</div>
+            <div id="lfo-container">
+                <!-- LFOs will be added dynamically -->
+            </div>
+            <div class="add-envelope-button">+ Add Envelope</div>
+            <div id="envelope-container">
+                <!-- Envelopes will be added dynamically -->
+            </div>
+        </div>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/simplex-noise/2.4.0/simplex-noise.min.js"></script>
+    <script src="sketch.js"></script>
+</body>
+</html> 
