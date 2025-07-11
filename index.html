@@ -1830,7 +1830,10 @@
                 <button id="download-logs-button" class="export-logs-button" style="background: var(--secondary-color);">Download Logs</button>
             </div>
             <div class="sequencer-group">
-                <h3>Sequencer 1</h3>
+                <div class="sequencer-header-with-delete">
+                    <h3>Sequencer 1</h3>
+                    <button class="delete-sequencer-btn" data-sequencer-id="1" title="Delete Sequencer">×</button>
+                </div>
                 <div class="control-group">
                     <button id="play-pause-button-1" class="play-pause-button">Stop</button>
                 </div>
@@ -1936,10 +1939,34 @@
                     <input type="range" id="brownian-range-1" min="1" max="4" value="1">
                     <span class="slider-value"></span>
                 </div>
+                <div class="control-group">
+                    <label>MIDI Channel</label>
+                    <select id="sequencer-midi-channel-1">
+                        <option value="0" selected>Channel 1</option>
+                        <option value="1">Channel 2</option>
+                        <option value="2">Channel 3</option>
+                        <option value="3">Channel 4</option>
+                        <option value="4">Channel 5</option>
+                        <option value="5">Channel 6</option>
+                        <option value="6">Channel 7</option>
+                        <option value="7">Channel 8</option>
+                        <option value="8">Channel 9</option>
+                        <option value="9">Channel 10</option>
+                        <option value="10">Channel 11</option>
+                        <option value="11">Channel 12</option>
+                        <option value="12">Channel 13</option>
+                        <option value="13">Channel 14</option>
+                        <option value="14">Channel 15</option>
+                        <option value="15">Channel 16</option>
+                    </select>
+                </div>
             </div>
 
             <div class="sequencer-group">
-                <h3>Sequencer 2</h3>
+                <div class="sequencer-header-with-delete">
+                    <h3>Sequencer 2</h3>
+                    <button class="delete-sequencer-btn" data-sequencer-id="2" title="Delete Sequencer">×</button>
+                </div>
                 <div class="control-group">
                     <button id="play-pause-button-2" class="play-pause-button">Stop</button>
                 </div>
@@ -2044,6 +2071,27 @@
                     <label>Brownian Range</label>
                     <input type="range" id="brownian-range-2" min="1" max="4" value="1">
                     <span class="slider-value"></span>
+                </div>
+                <div class="control-group">
+                    <label>MIDI Channel</label>
+                    <select id="sequencer-midi-channel-2">
+                        <option value="0">Channel 1</option>
+                        <option value="1" selected>Channel 2</option>
+                        <option value="2">Channel 3</option>
+                        <option value="3">Channel 4</option>
+                        <option value="4">Channel 5</option>
+                        <option value="5">Channel 6</option>
+                        <option value="6">Channel 7</option>
+                        <option value="7">Channel 8</option>
+                        <option value="8">Channel 9</option>
+                        <option value="9">Channel 10</option>
+                        <option value="10">Channel 11</option>
+                        <option value="11">Channel 12</option>
+                        <option value="12">Channel 13</option>
+                        <option value="13">Channel 14</option>
+                        <option value="14">Channel 15</option>
+                        <option value="15">Channel 16</option>
+                    </select>
                 </div>
             </div>
 

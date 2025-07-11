@@ -2195,8 +2195,8 @@ function createSpheres() {
         });
         
         // Read current MIDI channel values from HTML selects
-        const midiChannel1Select = document.getElementById('midi-channel-1');
-        const midiChannel2Select = document.getElementById('midi-channel-2');
+        const midiChannel1Select = document.getElementById('sequencer-midi-channel-1');
+        const midiChannel2Select = document.getElementById('sequencer-midi-channel-2');
         
         console.log('[MIDI_CHANNEL_DEBUG] HTML select elements found:', {
             midiChannel1Select: !!midiChannel1Select,
@@ -2213,7 +2213,7 @@ function createSpheres() {
                 selectedOption: midiChannel1Select.options[midiChannel1Select.selectedIndex]?.text
             });
         } else {
-            console.log('[MIDI_CHANNEL_DEBUG] midi-channel-1 select not found!');
+            console.log('[MIDI_CHANNEL_DEBUG] sequencer-midi-channel-1 select not found!');
         }
         
         if (midiChannel2Select) {
@@ -2226,7 +2226,7 @@ function createSpheres() {
                 selectedOption: midiChannel2Select.options[midiChannel2Select.selectedIndex]?.text
             });
         } else {
-            console.log('[MIDI_CHANNEL_DEBUG] midi-channel-2 select not found!');
+            console.log('[MIDI_CHANNEL_DEBUG] sequencer-midi-channel-2 select not found!');
         }
         
         // Create Sequencer instances instead of manual spheres
@@ -2827,6 +2827,38 @@ function setupControls() {
             console.log('[MIDI_CHANNEL_DEBUG] Updated sequencer 2 MIDI channel to:', midiChannel2, '(MIDI Channel', midiChannel2 + 1, ')');
         }
     });
+
+    // Add listeners for the new sequencer-specific MIDI channel controls
+    addListener('sequencer-midi-channel-1', 'change', (e) => {
+        const newChannel = parseInt(e.target.value);
+        if (sequencer1) {
+            sequencer1.midiChannel = newChannel;
+            console.log('[MIDI_CHANNEL_DEBUG] Updated sequencer 1 MIDI channel via dropdown to:', newChannel, '(MIDI Channel', newChannel + 1, ')');
+        }
+    });
+
+    addListener('sequencer-midi-channel-2', 'change', (e) => {
+        const newChannel = parseInt(e.target.value);
+        if (sequencer2) {
+            sequencer2.midiChannel = newChannel;
+            console.log('[MIDI_CHANNEL_DEBUG] Updated sequencer 2 MIDI channel via dropdown to:', newChannel, '(MIDI Channel', newChannel + 1, ')');
+        }
+    });
+
+    // Add delete button listeners for main sequencers
+    const deleteBtn1 = document.querySelector('[data-sequencer-id="1"]');
+    if (deleteBtn1) {
+        deleteBtn1.addEventListener('click', () => {
+            deleteSequencer(1);
+        });
+    }
+
+    const deleteBtn2 = document.querySelector('[data-sequencer-id="2"]');
+    if (deleteBtn2) {
+        deleteBtn2.addEventListener('click', () => {
+            deleteSequencer(2);
+        });
+    }
 
     addListener('clear-all', 'click', () => {
         sequence = new Array(totalSteps).fill(0);
@@ -6286,10 +6318,13 @@ function createAdditionalSequencer() {
     const sequencerGroup = document.createElement('div');
     sequencerGroup.className = 'sequencer-group';
     
-    // Add a header to separate sequencers
+    // Add a header to separate sequencers with delete button
     const header = document.createElement('div');
-    header.className = 'sequencer-header';
-    header.innerHTML = `<h3>Sequencer ${sequencerId}</h3>`;
+    header.className = 'sequencer-header-with-delete';
+    header.innerHTML = `
+        <h3>Sequencer ${sequencerId}</h3>
+        <button class="delete-sequencer-btn" data-sequencer-id="${sequencerId}" title="Delete Sequencer">×</button>
+    `;
     sequencerGroup.appendChild(header);
     
     // Add the controls
@@ -6330,22 +6365,22 @@ function createAdditionalSequencer() {
         <div class="control-group">
             <label>MIDI Channel</label>
             <select id="midi-channel-${sequencerId}">
-                <option value="0">Ch 1</option>
-                <option value="1">Ch 2</option>
-                <option value="2">Ch 3</option>
-                <option value="3">Ch 4</option>
-                <option value="4">Ch 5</option>
-                <option value="5">Ch 6</option>
-                <option value="6">Ch 7</option>
-                <option value="7">Ch 8</option>
-                <option value="8">Ch 9</option>
-                <option value="9">Ch 10</option>
-                <option value="10">Ch 11</option>
-                <option value="11">Ch 12</option>
-                <option value="12">Ch 13</option>
-                <option value="13">Ch 14</option>
-                <option value="14">Ch 15</option>
-                <option value="15">Ch 16</option>
+                <option value="0" ${assignedChannel === 0 ? 'selected' : ''}>Channel 1</option>
+                <option value="1" ${assignedChannel === 1 ? 'selected' : ''}>Channel 2</option>
+                <option value="2" ${assignedChannel === 2 ? 'selected' : ''}>Channel 3</option>
+                <option value="3" ${assignedChannel === 3 ? 'selected' : ''}>Channel 4</option>
+                <option value="4" ${assignedChannel === 4 ? 'selected' : ''}>Channel 5</option>
+                <option value="5" ${assignedChannel === 5 ? 'selected' : ''}>Channel 6</option>
+                <option value="6" ${assignedChannel === 6 ? 'selected' : ''}>Channel 7</option>
+                <option value="7" ${assignedChannel === 7 ? 'selected' : ''}>Channel 8</option>
+                <option value="8" ${assignedChannel === 8 ? 'selected' : ''}>Channel 9</option>
+                <option value="9" ${assignedChannel === 9 ? 'selected' : ''}>Channel 10</option>
+                <option value="10" ${assignedChannel === 10 ? 'selected' : ''}>Channel 11</option>
+                <option value="11" ${assignedChannel === 11 ? 'selected' : ''}>Channel 12</option>
+                <option value="12" ${assignedChannel === 12 ? 'selected' : ''}>Channel 13</option>
+                <option value="13" ${assignedChannel === 13 ? 'selected' : ''}>Channel 14</option>
+                <option value="14" ${assignedChannel === 14 ? 'selected' : ''}>Channel 15</option>
+                <option value="15" ${assignedChannel === 15 ? 'selected' : ''}>Channel 16</option>
             </select>
         </div>
     `;
@@ -6446,6 +6481,109 @@ function createAdditionalSequencer() {
     debugLog('Sequencer', `Added sequencer ${sequencerId} to additionalSequencers array`, { 
         totalSequencers: additionalSequencers.length 
     });
+    
+    // Add delete button event listener
+    const deleteBtn = header.querySelector('.delete-sequencer-btn');
+    if (deleteBtn) {
+        deleteBtn.addEventListener('click', () => {
+            deleteSequencer(sequencerId);
+        });
+    }
+}
+
+// Function to delete a sequencer and reposition others
+function deleteSequencer(sequencerId) {
+    console.log(`[DELETE_DEBUG] Attempting to delete sequencer ${sequencerId}`);
+    
+    // Find the sequencer to delete
+    let sequencerToDelete = null;
+    let sequencerIndex = -1;
+    
+    // Check if it's one of the main sequencers
+    if (sequencerId === 1 && sequencer1) {
+        sequencerToDelete = sequencer1;
+        sequencer1 = null;
+    } else if (sequencerId === 2 && sequencer2) {
+        sequencerToDelete = sequencer2;
+        sequencer2 = null;
+    } else {
+        // Check additional sequencers
+        sequencerIndex = additionalSequencers.findIndex(seq => seq.id === sequencerId);
+        if (sequencerIndex !== -1) {
+            sequencerToDelete = additionalSequencers[sequencerIndex];
+            additionalSequencers.splice(sequencerIndex, 1);
+        }
+    }
+    
+    if (!sequencerToDelete) {
+        console.error(`[DELETE_DEBUG] Sequencer ${sequencerId} not found`);
+        return;
+    }
+    
+    console.log(`[DELETE_DEBUG] Found sequencer ${sequencerId} to delete`);
+    
+    // Dispose of the sequencer
+    sequencerToDelete.dispose();
+    
+    // Remove the UI controls
+    const controlsContainer = document.querySelector('.controls');
+    if (controlsContainer) {
+        let sequencerGroup = null;
+        
+        if (sequencerId === 1 || sequencerId === 2) {
+            // For main sequencers, find by the delete button
+            const deleteBtn = controlsContainer.querySelector(`[data-sequencer-id="${sequencerId}"]`);
+            sequencerGroup = deleteBtn?.closest('.sequencer-group');
+        } else {
+            // For additional sequencers, find by the delete button
+            sequencerGroup = controlsContainer.querySelector(`[data-sequencer-id="${sequencerId}"]`)?.closest('.sequencer-group');
+        }
+        
+        if (sequencerGroup) {
+            sequencerGroup.remove();
+        }
+    }
+    
+    // Reposition remaining sequencers
+    repositionSequencers();
+    
+    console.log(`[DELETE_DEBUG] Sequencer ${sequencerId} deleted successfully`);
+}
+
+// Function to reposition sequencers after deletion
+function repositionSequencers() {
+    console.log('[REPOSITION_DEBUG] Repositioning sequencers');
+    
+    // Reposition additional sequencers
+    additionalSequencers.forEach((sequencer, index) => {
+        const newRadius = 8 + (index * 2); // Start at radius 8, increment by 2
+        const newId = index + 3; // Start from ID 3
+        
+        console.log(`[REPOSITION_DEBUG] Repositioning sequencer ${sequencer.id} to radius ${newRadius} with new ID ${newId}`);
+        
+        // Update sequencer properties
+        sequencer.radius = newRadius;
+        sequencer.id = newId;
+        
+        // Update visual position
+        sequencer.visualEngine.createSpheres();
+        
+        // Update UI header
+        const controlsContainer = document.querySelector('.controls');
+        if (controlsContainer) {
+            const deleteBtn = controlsContainer.querySelector(`[data-sequencer-id="${sequencer.id}"]`);
+            const sequencerGroup = deleteBtn?.closest('.sequencer-group');
+            if (sequencerGroup) {
+                const header = sequencerGroup.querySelector('.sequencer-header-with-delete');
+                if (header) {
+                    header.querySelector('h3').textContent = `Sequencer ${newId}`;
+                    header.querySelector('.delete-sequencer-btn').setAttribute('data-sequencer-id', newId);
+                }
+            }
+        }
+    });
+    
+    console.log('[REPOSITION_DEBUG] Sequencer repositioning complete');
 }
 
 function generatePitches(numSteps, rootNote, scaleType, octaveRange) {
