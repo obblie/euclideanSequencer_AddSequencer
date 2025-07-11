@@ -349,14 +349,17 @@ class AudioEngine {
             pitch: pitch,
             velocity: velocity,
             midiChannel: this.sequencer.midiChannel,
+            midiChannelDisplay: this.sequencer.midiChannel + 1, // Show 1-indexed channel number
             midiOutputEnabled: midiOutputEnabled,
-            midiOutput: !!midiOutput
+            midiOutput: !!midiOutput,
+            midiOutputName: midiOutput ? midiOutput.name : 'none'
         });
         
         if (!midiOutputEnabled || !midiOutput) {
             console.log(`[MIDI_DEBUG] MIDI conditions not met for sequencer ${this.sequencer.id}`, {
                 midiOutputEnabled: midiOutputEnabled,
-                midiOutput: !!midiOutput
+                midiOutput: !!midiOutput,
+                midiOutputName: midiOutput ? midiOutput.name : 'none'
             });
             return;
         }
@@ -367,13 +370,24 @@ class AudioEngine {
         console.log(`[MIDI_DEBUG] Sending MIDI for sequencer ${this.sequencer.id}`, {
             noteOn: noteOn,
             noteOff: noteOff,
-            channel: this.sequencer.midiChannel + 1
+            channel: this.sequencer.midiChannel + 1, // Show 1-indexed channel number
+            midiOutputName: midiOutput.name
         });
         
-        sendMIDIMessage(noteOn);
-        setTimeout(() => {
-            sendMIDIMessage(noteOff);
-        }, 50);
+        try {
+            // Send MIDI directly instead of using queue
+            midiOutput.send(noteOn);
+            console.log(`[MIDI_DEBUG] Note On sent directly for sequencer ${this.sequencer.id}`);
+            
+            setTimeout(() => {
+                midiOutput.send(noteOff);
+                console.log(`[MIDI_DEBUG] Note Off sent directly for sequencer ${this.sequencer.id}`);
+            }, 50);
+            
+            console.log(`[MIDI_DEBUG] MIDI messages sent successfully for sequencer ${this.sequencer.id}`);
+        } catch (error) {
+            console.error(`[MIDI_DEBUG] Error sending MIDI for sequencer ${this.sequencer.id}:`, error);
+        }
     }
 }
 
@@ -660,7 +674,12 @@ class Sequencer {
         this.lastBrownianStep = 0;
         
         // Audio/MIDI
-        this.midiChannel = options.midiChannel || (id % 16);
+        this.midiChannel = (options.midiChannel !== undefined) ? options.midiChannel : (id % 16);
+        console.log(`[MIDI_CHANNEL_DEBUG] Sequencer ${id} constructor:`, {
+            optionsMidiChannel: options.midiChannel,
+            finalMidiChannel: this.midiChannel,
+            finalMidiChannelDisplay: this.midiChannel + 1
+        });
         this.chordMode = options.chordMode || false;
         this.chordType = options.chordType || 'major';
         
@@ -1888,10 +1907,10 @@ function animate() {
         
         // Update visual animations for all sequencers
         allSequencers.forEach(sequencer => {
-            if (sequencer && sequencer instanceof Sequencer) {
+                if (sequencer && sequencer instanceof Sequencer) {
                 sequencer.update(now, bpm); // This only updates visual animations, not timing
-            }
-        });
+                }
+            });
     }
 
     // Update particle system
@@ -2175,7 +2194,50 @@ function createSpheres() {
             materialType: platform.material ? platform.material.type : 'none'
         });
         
+        // Read current MIDI channel values from HTML selects
+        const midiChannel1Select = document.getElementById('midi-channel-1');
+        const midiChannel2Select = document.getElementById('midi-channel-2');
+        
+        console.log('[MIDI_CHANNEL_DEBUG] HTML select elements found:', {
+            midiChannel1Select: !!midiChannel1Select,
+            midiChannel2Select: !!midiChannel2Select
+        });
+        
+        if (midiChannel1Select) {
+            const originalValue = midiChannel1;
+            midiChannel1 = parseInt(midiChannel1Select.value);
+            console.log('[MIDI_CHANNEL_DEBUG] Updated midiChannel1 from HTML:', {
+                originalValue: originalValue,
+                newValue: midiChannel1,
+                htmlValue: midiChannel1Select.value,
+                selectedOption: midiChannel1Select.options[midiChannel1Select.selectedIndex]?.text
+            });
+        } else {
+            console.log('[MIDI_CHANNEL_DEBUG] midi-channel-1 select not found!');
+        }
+        
+        if (midiChannel2Select) {
+            const originalValue = midiChannel2;
+            midiChannel2 = parseInt(midiChannel2Select.value);
+            console.log('[MIDI_CHANNEL_DEBUG] Updated midiChannel2 from HTML:', {
+                originalValue: originalValue,
+                newValue: midiChannel2,
+                htmlValue: midiChannel2Select.value,
+                selectedOption: midiChannel2Select.options[midiChannel2Select.selectedIndex]?.text
+            });
+        } else {
+            console.log('[MIDI_CHANNEL_DEBUG] midi-channel-2 select not found!');
+        }
+        
         // Create Sequencer instances instead of manual spheres
+        console.log('[MIDI_CHANNEL_DEBUG] Creating sequencers with channels:', {
+            midiChannel1: midiChannel1,
+            midiChannel1Display: midiChannel1 + 1, // Show 1-indexed channel number
+            midiChannel2: midiChannel2,
+            midiChannel2Display: midiChannel2 + 1  // Show 1-indexed channel number
+        });
+        
+        console.log('[MIDI_CHANNEL_DEBUG] Creating sequencer1 with midiChannel:', midiChannel1);
         sequencer1 = new Sequencer(1, 4, {
             beats: beats,
             steps: totalSteps,
@@ -2190,7 +2252,9 @@ function createSpheres() {
             centerZ: 0,
             midiChannel: midiChannel1
         });
+        console.log('[MIDI_CHANNEL_DEBUG] sequencer1 created with midiChannel:', sequencer1.midiChannel);
         
+        console.log('[MIDI_CHANNEL_DEBUG] Creating sequencer2 with midiChannel:', midiChannel2);
         sequencer2 = new Sequencer(2, 6, {
             beats: beats2,
             steps: totalSteps2,
@@ -2204,6 +2268,14 @@ function createSpheres() {
             centerX: 0,
             centerZ: 0,
             midiChannel: midiChannel2
+        });
+        console.log('[MIDI_CHANNEL_DEBUG] sequencer2 created with midiChannel:', sequencer2.midiChannel);
+        
+        console.log('[MIDI_CHANNEL_DEBUG] Sequencers created with channels:', {
+            sequencer1Channel: sequencer1.midiChannel,
+            sequencer1ChannelDisplay: sequencer1.midiChannel + 1, // Show 1-indexed channel number
+            sequencer2Channel: sequencer2.midiChannel,
+            sequencer2ChannelDisplay: sequencer2.midiChannel + 1  // Show 1-indexed channel number
         });
         
         // Start both sequencers
@@ -2469,12 +2541,12 @@ function setupControls() {
                 e.target.classList.toggle('playing', !isPlaying);
                 
                 if (isPlaying && !isAnimating) {
-                    startAnimation();
+                startAnimation();
                 } else if (!isPlaying && sequencer2 && !sequencer2.isPlaying && isAnimating) {
                     stopAnimation();
-                }
             }
-        });
+        }
+    });
     }
 
     const playPauseBtn2 = document.getElementById('play-pause-button-2');
@@ -2486,12 +2558,12 @@ function setupControls() {
                 e.target.classList.toggle('playing', !isPlaying);
                 
                 if (isPlaying && !isAnimating) {
-                    startAnimation();
+                startAnimation();
                 } else if (!isPlaying && sequencer1 && !sequencer1.isPlaying && isAnimating) {
                     stopAnimation();
-                }
             }
-        });
+        }
+    });
     }
 
     // Initialize all slider values
@@ -2742,10 +2814,18 @@ function setupControls() {
 
     addListener('midi-channel-1', 'change', (e) => {
         midiChannel1 = parseInt(e.target.value);
+        if (sequencer1) {
+            sequencer1.midiChannel = midiChannel1;
+            console.log('[MIDI_CHANNEL_DEBUG] Updated sequencer 1 MIDI channel to:', midiChannel1, '(MIDI Channel', midiChannel1 + 1, ')');
+        }
     });
 
     addListener('midi-channel-2', 'change', (e) => {
         midiChannel2 = parseInt(e.target.value);
+        if (sequencer2) {
+            sequencer2.midiChannel = midiChannel2;
+            console.log('[MIDI_CHANNEL_DEBUG] Updated sequencer 2 MIDI channel to:', midiChannel2, '(MIDI Channel', midiChannel2 + 1, ')');
+        }
     });
 
     addListener('clear-all', 'click', () => {
@@ -3639,14 +3719,14 @@ function onMouseClick(event) {
         for (const sequencer of allSequencers) {
             if (sequencer.spheres && sequencer.spheres.includes(group)) {
                 const index = sequencer.spheres.indexOf(group);
-                if (index !== -1) {
+        if (index !== -1) {
                     // Toggle the step in the sequencer's sequence
                     sequencer.sequence[index] = sequencer.sequence[index] === 1 ? 0 : 1;
                     // Update the sequencer's visual representation
                     sequencer.visualEngine.updateSphereColors();
-                    return;
-                }
-            }
+            return;
+        }
+    }
         }
     }
 }
@@ -3692,6 +3772,11 @@ function onMIDISuccess(midiAccess) {
     if (iacDriver) {
         console.log('Found IAC Driver, auto-connecting...', iacDriver);
         midiOutput = iacDriver;
+        midiOutputEnabled = true;
+    } else if (midiOutputs.length > 0) {
+        // If no IAC Driver found, use the first available MIDI output
+        console.log('No IAC Driver found, using first available MIDI output:', midiOutputs[0]);
+        midiOutput = midiOutputs[0];
         midiOutputEnabled = true;
     }
     
@@ -6157,6 +6242,14 @@ function createAdditionalSequencer() {
     const centerZ = 0; // Keep at center like original sequencers
     
     // Create new Sequencer instance
+    const assignedChannel = (additionalSequencers.length + 2) % 16;
+    console.log('[MIDI_CHANNEL_DEBUG] Creating additional sequencer:', {
+        sequencerId: sequencerId,
+        assignedChannel: assignedChannel,
+        assignedChannelDisplay: assignedChannel + 1, // Show 1-indexed channel number
+        additionalSequencersLength: additionalSequencers.length
+    });
+    
     const sequencer = new Sequencer(sequencerId, radius, {
         beats: 16,
         steps: 16,
@@ -6169,7 +6262,7 @@ function createAdditionalSequencer() {
         octaveRange: octaveRange,
         centerX: centerX,
         centerZ: centerZ,
-        midiChannel: (additionalSequencers.length + 3) % 16 // Start from channel 3 (0-based: 3, 4, 5, etc.) to avoid conflict with sequencer 2 (channel 1)
+        midiChannel: assignedChannel // Start from channel 2 (0-based: 2, 3, 4, etc.) to avoid conflict with sequencer 1 (channel 0) and sequencer 2 (channel 1)
     });
     
     // Start the sequencer automatically
