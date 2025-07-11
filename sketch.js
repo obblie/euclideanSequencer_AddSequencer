@@ -171,6 +171,10 @@ let spheres2 = [];
 let additionalSequencers = [];
 let nextSequencerRadius = 8; // Start after the second sequencer
 
+// Replace legacy sequencers with unified Sequencer instances
+let sequencer1 = null;
+let sequencer2 = null;
+
 // Global variables for pop-out window
 let popOutWindow = null;
 let popOutRenderer = null;
@@ -341,10 +345,30 @@ class AudioEngine {
     }
 
     sendMIDI(pitch, velocity) {
-        if (!midiOutputEnabled || !midiOutput) return;
+        console.log(`[MIDI_DEBUG] AudioEngine.sendMIDI called for sequencer ${this.sequencer.id}`, {
+            pitch: pitch,
+            velocity: velocity,
+            midiChannel: this.sequencer.midiChannel,
+            midiOutputEnabled: midiOutputEnabled,
+            midiOutput: !!midiOutput
+        });
+        
+        if (!midiOutputEnabled || !midiOutput) {
+            console.log(`[MIDI_DEBUG] MIDI conditions not met for sequencer ${this.sequencer.id}`, {
+                midiOutputEnabled: midiOutputEnabled,
+                midiOutput: !!midiOutput
+            });
+            return;
+        }
 
         const noteOn = [0x90 + this.sequencer.midiChannel, pitch, velocity];
         const noteOff = [0x80 + this.sequencer.midiChannel, pitch, 0];
+        
+        console.log(`[MIDI_DEBUG] Sending MIDI for sequencer ${this.sequencer.id}`, {
+            noteOn: noteOn,
+            noteOff: noteOff,
+            channel: this.sequencer.midiChannel + 1
+        });
         
         sendMIDIMessage(noteOn);
         setTimeout(() => {
@@ -512,12 +536,12 @@ class VisualEngine {
 
         // Scale animation for visibility
         this.spheres[this.sequencer.currentStep].scale.set(1.2, 1.2, 1.2);
-        setTimeout(() => {
+            setTimeout(() => {
             if (this.spheres[this.sequencer.currentStep]) {
                 this.spheres[this.sequencer.currentStep].scale.set(1.0, 1.0, 1.0);
-            }
-        }, 100);
-    }
+                }
+            }, 100);
+        }
 
     updateAnimations(now) {
         this.animations = this.animations.filter(anim => updateAnimation(anim, now));
@@ -553,7 +577,7 @@ class SequenceEngine {
             this.sequencer.octaveRange || 2
         );
     }
-
+    
     getNextStep() {
         switch (this.sequencer.mode) {
             case 'forward':
@@ -579,8 +603,19 @@ class SequenceEngine {
     }
 
     shouldPlaySound() {
-        return this.sequencer.sequence[this.sequencer.currentStep] === 1 && 
-               Math.random() * 100 < this.sequencer.probability;
+        const sequenceValue = this.sequencer.sequence[this.sequencer.currentStep];
+        const probabilityCheck = Math.random() * 100 < this.sequencer.probability;
+        const shouldPlay = sequenceValue === 1 && probabilityCheck;
+        
+        console.log(`[MIDI_DEBUG] shouldPlaySound() for sequencer ${this.sequencer.id}`, {
+            currentStep: this.sequencer.currentStep,
+            sequenceValue: sequenceValue,
+            probability: this.sequencer.probability,
+            probabilityCheck: probabilityCheck,
+            shouldPlay: shouldPlay
+        });
+        
+        return shouldPlay;
     }
 
     reset() {
@@ -679,6 +714,13 @@ class Sequencer {
     playSound() {
         const pitch = this.pitches[this.currentStep];
         const velocity = this.velocity;
+        
+        console.log(`[MIDI_DEBUG] Sequencer ${this.id}.playSound() called`, {
+            pitch: pitch,
+            velocity: velocity,
+            currentStep: this.currentStep,
+            sequenceValue: this.sequence[this.currentStep]
+        });
         
         this.audioEngine.playNote(pitch, velocity);
         this.audioEngine.sendMIDI(pitch, velocity);
@@ -1833,27 +1875,19 @@ function animate() {
     if (timeSinceLastStep >= stepDuration) {
         masterLastStepTime = currentTime;
         masterStep++;
-        if (isPlaying1) {
-            debugLog('Animation', 'Calling updateSequencer1');
-            updateSequencer1();
-        }
-        if (isPlaying2) {
-            debugLog('Animation', 'Calling updateSequencer2');
-            updateSequencer2();
-        }
-        // Update all additional sequencers using the new Sequencer class
-        if (additionalSequencers && additionalSequencers.length > 0) {
-            console.log(`[PLAYHEAD_DEBUG] Processing ${additionalSequencers.length} additional sequencers`);
-            additionalSequencers.forEach((sequencer, index) => {
-                if (sequencer && sequencer instanceof Sequencer) {
-                    console.log(`[PLAYHEAD_DEBUG] Calling step() for sequencer ${sequencer.id}`);
-                    sequencer.step(); // Call step() instead of update() for timing
-                }
-            });
-        }
         
-        // Update visual animations for additional sequencers
-        additionalSequencers.forEach(sequencer => {
+        // Update all sequencers using the unified Sequencer class
+        const allSequencers = [sequencer1, sequencer2, ...additionalSequencers].filter(s => s);
+        
+        allSequencers.forEach(sequencer => {
+            if (sequencer && sequencer instanceof Sequencer && sequencer.isPlaying) {
+                console.log(`[PLAYHEAD_DEBUG] Calling step() for sequencer ${sequencer.id}`);
+                sequencer.step(); // Call step() for timing
+            }
+        });
+        
+        // Update visual animations for all sequencers
+        allSequencers.forEach(sequencer => {
             if (sequencer && sequencer instanceof Sequencer) {
                 sequencer.update(now, bpm); // This only updates visual animations, not timing
             }
@@ -1917,7 +1951,8 @@ function startAnimation() {
         currentStep = 0;
         currentStep2 = 0;
         // Reset all sequencers
-        additionalSequencers.forEach(sequencer => {
+        const allSequencers = [sequencer1, sequencer2, ...additionalSequencers].filter(s => s);
+        allSequencers.forEach(sequencer => {
             if (sequencer instanceof Sequencer) {
                 sequencer.reset();
             }
@@ -2107,96 +2142,80 @@ function createSpheres() {
         throw new Error('Cannot create spheres: scene is not initialized');
     }
     
-    debugLog('Spheres', 'Starting sphere creation');
+    debugLog('Spheres', 'Starting sequencer creation');
     
     try {
-        // Initialize arrays if they don't exist
-        spheres = spheres || [];
-        spheres2 = spheres2 || [];
+        // Clear existing sequencers
+        if (sequencer1) {
+            sequencer1.dispose();
+            sequencer1 = null;
+        }
+        if (sequencer2) {
+            sequencer2.dispose();
+            sequencer2 = null;
+        }
         
-        // Clear existing spheres
-        spheres.forEach(group => {
-            if (group && group.children) {
-                group.children.forEach(child => {
-                    if (child.material) {
-                        child.material.dispose();
-                    }
-                    if (child.geometry) {
-                        child.geometry.dispose();
-                    }
-                });
-            }
-            scene.remove(group);
-        });
-        
-        spheres2.forEach(group => {
-            if (group && group.children) {
-                group.children.forEach(child => {
-                    if (child.material) {
-                        child.material.dispose();
-                    }
-                    if (child.geometry) {
-                        child.geometry.dispose();
-                    }
-                });
-            }
-            scene.remove(group);
-        });
-        
+        // Clear legacy sphere arrays
         spheres = [];
         spheres2 = [];
         
         // Create platform
         const platformGeometry = new THREE.CylinderGeometry(8, 8.5, 0.2, 64);
-        const platformMaterial = new THREE.MeshPhongMaterial({
-            color: COLORS.background,
-            shininess: 100,
-            specular: 0x666666
+        const platformMaterial = createGlossyMaterial(0x2a2a3e, 0.8); // Use a lighter color with high glow for visibility
+        console.log(`[PLATFORM_DEBUG] Creating initial platform`, {
+            materialCreated: !!platformMaterial,
+            materialType: platformMaterial ? platformMaterial.type : 'none',
+            color: 0x2a2a3e
         });
         const platform = new THREE.Mesh(platformGeometry, platformMaterial);
         platform.position.y = -0.1;
         scene.add(platform);
+        console.log(`[PLATFORM_DEBUG] Platform added to scene`, {
+            materialAssigned: !!platform.material,
+            materialType: platform.material ? platform.material.type : 'none'
+        });
         
-        // Create spheres for first sequencer
-        for (let i = 0; i < totalSteps; i++) {
-            const angle = (i / totalSteps) * Math.PI * 2;
-            const group = new THREE.Group();
-            
-            const material = createGlossyMaterial(sequence[i] === 1 ? COLORS.active : COLORS.inactive);
-            const shape = createShapeByType(0.2, 1.0, material, currentShapeType);
-            
-            shape.position.x = Math.cos(angle) * 4;
-            shape.position.z = Math.sin(angle) * 4;
-            shape.position.y = 0.5;
-            
-            group.add(shape);
-            spheres.push(group);
-            scene.add(group);
-        }
+        // Create Sequencer instances instead of manual spheres
+        sequencer1 = new Sequencer(1, 4, {
+            beats: beats,
+            steps: totalSteps,
+            velocity: 100,
+            probability: probability1,
+            mode: sequenceMode1,
+            bpm: bpm,
+            rootNote: rootNote,
+            scaleType: scaleType,
+            octaveRange: octaveRange,
+            centerX: 0,
+            centerZ: 0,
+            midiChannel: midiChannel1
+        });
         
-        // Create spheres for second sequencer
-        for (let i = 0; i < totalSteps2; i++) {
-            const angle = (i / totalSteps2) * Math.PI * 2;
-            const group = new THREE.Group();
-            
-            const material = createGlossyMaterial(sequence2[i] === 1 ? COLORS.active : COLORS.inactive);
-            const shape = createShapeByType(0.15, 0.75, material, currentShapeType);
-            
-            shape.position.x = Math.cos(angle) * 6;
-            shape.position.z = Math.sin(angle) * 6;
-            shape.position.y = 0.5;
-            
-            group.add(shape);
-            spheres2.push(group);
-            scene.add(group);
-        }
+        sequencer2 = new Sequencer(2, 6, {
+            beats: beats2,
+            steps: totalSteps2,
+            velocity: 100,
+            probability: probability2,
+            mode: sequenceMode2,
+            bpm: bpm,
+            rootNote: rootNote,
+            scaleType: scaleType,
+            octaveRange: octaveRange,
+            centerX: 0,
+            centerZ: 0,
+            midiChannel: midiChannel2
+        });
         
-        debugLog('Spheres', 'Sphere creation complete', {
-            spheresCount: spheres.length,
-            spheres2Count: spheres2.length
+        // Start both sequencers
+        sequencer1.isPlaying = true;
+        sequencer2.isPlaying = true;
+        
+        debugLog('Spheres', 'Sequencer creation complete', {
+            sequencer1Id: sequencer1.id,
+            sequencer2Id: sequencer2.id
         });
     } catch (error) {
-        console.error('Error creating spheres:', error);
+        console.error('Error creating sequencers:', error);
         throw error;
     }
 }
@@ -2444,57 +2463,35 @@ function setupControls() {
     const playPauseBtn1 = document.getElementById('play-pause-button-1');
     if (playPauseBtn1) {
         playPauseBtn1.addEventListener('click', (e) => {
-        isPlaying1 = !isPlaying1;
-        e.target.textContent = isPlaying1 ? 'Stop' : 'Play';
-        e.target.classList.toggle('playing', !isPlaying1);
-        if (isPlaying1) {
-            if (!isAnimating) {
-                startAnimation();
-            }
-        } else {
-                if (!isPlaying2 && isAnimating) {
+            if (sequencer1) {
+                const isPlaying = sequencer1.togglePlayback();
+                e.target.textContent = isPlaying ? 'Stop' : 'Play';
+                e.target.classList.toggle('playing', !isPlaying);
+                
+                if (isPlaying && !isAnimating) {
+                    startAnimation();
+                } else if (!isPlaying && sequencer2 && !sequencer2.isPlaying && isAnimating) {
                     stopAnimation();
                 }
-            if (spheres[currentStep] && spheres[currentStep].children) {
-                spheres[currentStep].children.forEach(child => {
-                    if (child.material) {
-                        child.material.dispose();
-                        child.material = createGlossyMaterial(
-                            sequence[currentStep] === 1 ? COLORS.active : COLORS.inactive
-                        );
-                    }
-                });
             }
-        }
-    });
+        });
     }
 
     const playPauseBtn2 = document.getElementById('play-pause-button-2');
     if (playPauseBtn2) {
         playPauseBtn2.addEventListener('click', (e) => {
-        isPlaying2 = !isPlaying2;
-        e.target.textContent = isPlaying2 ? 'Stop' : 'Play';
-        e.target.classList.toggle('playing', !isPlaying2);
-        if (isPlaying2) {
-            if (!isAnimating) {
-                startAnimation();
-            }
-        } else {
-                if (!isPlaying1 && isAnimating) {
+            if (sequencer2) {
+                const isPlaying = sequencer2.togglePlayback();
+                e.target.textContent = isPlaying ? 'Stop' : 'Play';
+                e.target.classList.toggle('playing', !isPlaying);
+                
+                if (isPlaying && !isAnimating) {
+                    startAnimation();
+                } else if (!isPlaying && sequencer1 && !sequencer1.isPlaying && isAnimating) {
                     stopAnimation();
                 }
-            if (spheres2[currentStep2] && spheres2[currentStep2].children) {
-                spheres2[currentStep2].children.forEach(child => {
-                    if (child.material) {
-                        child.material.dispose();
-                        child.material = createGlossyMaterial(
-                            sequence2[currentStep2] === 1 ? COLORS.active : COLORS.inactive
-                        );
-                    }
-                });
             }
-        }
-    });
+        });
     }
 
     // Initialize all slider values
@@ -2540,10 +2537,9 @@ function setupControls() {
         console.log('[DEBUG] Beats slider changed:', e.target.value);
         beats = parseInt(e.target.value);
         updateSliderValue(e.target, beats, 'beats');
-        console.log('[DEBUG] Before generateEuclideanRhythm - beats:', beats, 'totalSteps:', totalSteps);
-        sequence = generateEuclideanRhythm(beats, totalSteps);
-        console.log('[DEBUG] After generateEuclideanRhythm - sequence:', sequence);
-        createSpheres(); // Recreate spheres to properly reflect the new pattern
+        if (sequencer1) {
+            sequencer1.setBeats(beats);
+        }
         drawSequenceVisualization();
     });
 
@@ -2551,8 +2547,9 @@ function setupControls() {
         console.log('[DEBUG] Steps slider changed:', e.target.value);
         totalSteps = parseInt(e.target.value);
         updateSliderValue(e.target, totalSteps, ' steps');
-        sequence = generateEuclideanRhythm(beats, totalSteps);
-        createSpheres();
+        if (sequencer1) {
+            sequencer1.setSteps(totalSteps);
+        }
         drawSequenceVisualization();
     });
 
@@ -2560,9 +2557,9 @@ function setupControls() {
         console.log('[DEBUG] Beats slider 2 changed:', e.target.value);
         beats2 = parseInt(e.target.value);
         updateSliderValue(e.target, beats2, ' beats');
-        sequence2 = generateEuclideanRhythm(beats2, totalSteps2);
-        console.log('[DEBUG] Generated sequence2:', sequence2);
-        createSpheres();
+        if (sequencer2) {
+            sequencer2.setBeats(beats2);
+        }
         drawSequenceVisualization();
     });
 
@@ -2570,9 +2567,9 @@ function setupControls() {
         console.log('[DEBUG] Steps slider 2 changed:', e.target.value);
         totalSteps2 = parseInt(e.target.value);
         updateSliderValue(e.target, totalSteps2, ' steps');
-        sequence2 = generateEuclideanRhythm(beats2, totalSteps2);
-        console.log('[DEBUG] Generated sequence2:', sequence2);
-        createSpheres();
+        if (sequencer2) {
+            sequencer2.setSteps(totalSteps2);
+        }
         drawSequenceVisualization();
     });
 
@@ -3007,39 +3004,8 @@ function setupControls() {
     initializeSlider('probability-slider-2', '%');
 }
 
-function updateSphereColors() {
-    spheres.forEach((group, i) => {
-        const isActive = sequence[i] === 1;
-        group.userData.active = isActive;
-        let materialColor = isActive ? COLORS.active : COLORS.inactive;
-        if (i === currentStep) {
-            materialColor = COLORS.playhead; // This should be white (0xffffff)
-        }
-        group.children.forEach(child => {
-            if (child.material) {
-                const newMaterial = createGlossyMaterial(materialColor);
-                child.material.dispose();
-                child.material = newMaterial;
-            }
-        });
-    });
-    
-    spheres2.forEach((group, i) => {
-        const isActive = sequence2[i] === 1;
-        group.userData.active = isActive;
-        let materialColor = isActive ? COLORS.active : COLORS.inactive;
-        if (i === currentStep2) {
-            materialColor = COLORS.playhead; // This should be white (0xffffff)
-        }
-        group.children.forEach(child => {
-            if (child.material) {
-                const newMaterial = createGlossyMaterial(materialColor);
-                child.material.dispose();
-                child.material = newMaterial;
-            }
-        });
-    });
-}
+// Legacy updateSphereColors function removed - now using unified Sequencer class
+// Each sequencer handles its own visual updates through VisualEngine
 
 function onWindowResize() {
     console.log('[DEBUG] Window resized');
@@ -3658,32 +3624,32 @@ function onMouseMove(event) {
 function onMouseClick(event) {
     raycaster.setFromCamera(mouse, camera);
     
-    // Get all meshes from both sphere groups
-    const outerMeshes = spheres.flatMap(group => group.children);
-    const innerMeshes = spheres2.flatMap(group => group.children);
+    // Collect all meshes from all sequencers
+    const allSequencers = [sequencer1, sequencer2, ...additionalSequencers].filter(s => s);
+    const allMeshes = allSequencers.flatMap(sequencer => 
+        sequencer.spheres ? sequencer.spheres.flatMap(group => group.children) : []
+    );
     
-    const intersectsOuter = raycaster.intersectObjects(outerMeshes);
-    if (intersectsOuter.length > 0) {
-        const mesh = intersectsOuter[0].object;
+    const intersects = raycaster.intersectObjects(allMeshes);
+    if (intersects.length > 0) {
+        const mesh = intersects[0].object;
         const group = mesh.parent;
-        const index = spheres.indexOf(group);
-        if (index !== -1) {
-            sequence[index] = sequence[index] === 1 ? 0 : 1;
-            updateSphereColors();
-            return;
+        
+        // Find which sequencer this mesh belongs to
+        for (const sequencer of allSequencers) {
+            if (sequencer.spheres && sequencer.spheres.includes(group)) {
+                const index = sequencer.spheres.indexOf(group);
+                if (index !== -1) {
+                    // Toggle the step in the sequencer's sequence
+                    sequencer.sequence[index] = sequencer.sequence[index] === 1 ? 0 : 1;
+                    // Update the sequencer's visual representation
+                    sequencer.visualEngine.updateSphereColors();
+                    return;
+                }
+            }
         }
     }
-    
-    const intersectsInner = raycaster.intersectObjects(innerMeshes);
-    if (intersectsInner.length > 0) {
-        const mesh = intersectsInner[0].object;
-        const group = mesh.parent;
-        const index = spheres2.indexOf(group);
-        if (index !== -1) {
-            sequence2[index] = sequence2[index] === 1 ? 0 : 1;
-            updateSphereColors();
-        }
-    }}
+}
 
 function initMIDI() {
     if (navigator.requestMIDIAccess) {
@@ -4892,147 +4858,8 @@ function createNewLFO() {
 
 // ... rest of the code ... 
 
-function updateSequencer1() {
-    if (!isPlaying1) {
-        debugLog('Sequencer1', 'Not playing, skipping update');
-        return;
-    }
-    
-    debugLog('Sequencer1', 'Updating', { 
-        currentStep, 
-        sequence: sequence[currentStep],
-        isPlaying1,
-        bpm,
-        totalSteps
-    });
-    
-    // Calculate and update to next step
-    const nextStep = getNextStep1();
-    debugLog('Sequencer1', 'Next step calculated', { 
-        currentStep, 
-        nextStep,
-        totalSteps
-    });
-    
-    // Update to next step
-    currentStep = nextStep;
-    debugLog('Sequencer1', 'Current step updated', { currentStep });
-    
-    // Play sound for the NEW current step if active (trigger on entry, not exit)
-    if (sequence[currentStep] === 1) {
-        debugLog('Sequencer1', 'Playing sound for step', { currentStep });
-        playSound();
-    }
-    
-    // Only animate the current playhead step, regardless of whether it's active or not
-    if (spheres[currentStep]) {
-        // Clear any existing animations for this sphere to prevent multiple animations
-        animations = animations.filter(anim => anim.group !== spheres[currentStep]);
-        animations.push(createStepAnimation(spheres[currentStep], performance.now()));
-    }
-    
-    // Update all sphere colors to show new playhead position
-    updateSphereColors();
-        
-        // Add a scale animation to make the playhead more visible
-    if (spheres[currentStep]) {
-        spheres[currentStep].scale.set(1.2, 1.2, 1.2);
-        setTimeout(() => {
-            spheres[currentStep].scale.set(1.0, 1.0, 1.0);
-        }, 100);
-    }
-    
-    // Force a render update to ensure the visual changes are visible
-    if (renderer && scene && camera) {
-        renderer.render(scene, camera);
-    }
-    drawSequenceVisualization(); // Ensure 2D playhead advances
-}
-
-// Update the play/pause handler
-function toggleSequencer1() {
-    isPlaying1 = !isPlaying1;
-    debugLog('Sequencer1', 'Play state toggled', { isPlaying1 });
-    
-    if (isPlaying1) {
-        if (!isAnimating) {
-            startAnimation();
-        }
-    } else {
-        if (!isPlaying2 && isAnimating) {
-            stopAnimation();
-        }
-        if (spheres[currentStep] && spheres[currentStep].children) {
-            spheres[currentStep].children.forEach(child => {
-                if (child.material) {
-                    child.material.dispose();
-                    child.material = createGlossyMaterial(
-                        sequence[currentStep] === 1 ? COLORS.active : COLORS.inactive
-                    );
-                }
-            });
-        }
-    }
-    
-    return isPlaying1;
-}
-
-function updateSequencer2() {
-    if (!isPlaying2) {
-        debugLog('Sequencer2', 'Not playing, skipping update');
-        return;
-    }
-    
-    debugLog('Sequencer2', 'Updating', { 
-        currentStep2, 
-        sequence: sequence2[currentStep2],
-        isPlaying2,
-        bpm,
-        totalSteps2
-    });
-    
-    // Calculate and update to next step
-    const nextStep = getNextStep2();
-    debugLog('Sequencer2', 'Next step calculated', { 
-        currentStep2, 
-        nextStep,
-        totalSteps2
-    });
-    
-    // Update to next step
-    currentStep2 = nextStep;
-    debugLog('Sequencer2', 'Current step updated', { currentStep2 });
-    
-    // Play sound for the NEW current step if active (trigger on entry, not exit)
-    if (sequence2[currentStep2] === 1) {
-        debugLog('Sequencer2', 'Playing sound for step', { currentStep2 });
-        playSound2();
-    }
-    
-    // Only animate the current playhead step, regardless of whether it's active or not
-    if (spheres2[currentStep2]) {
-        // Clear any existing animations for this sphere to prevent multiple animations
-        animations2 = animations2.filter(anim => anim.group !== spheres2[currentStep2]);
-        animations2.push(createStepAnimation(spheres2[currentStep2], performance.now()));
-    }
-    
-    // Update all sphere colors to show new playhead position
-    updateSphereColors();
-        
-        // Add a scale animation to make the playhead more visible
-    if (spheres2[currentStep2]) {
-        spheres2[currentStep2].scale.set(1.2, 1.2, 1.2);
-        setTimeout(() => {
-            spheres2[currentStep2].scale.set(1.0, 1.0, 1.0);
-        }, 100);
-    }
-    
-    // Force a render update to ensure the visual changes are visible
-    if (renderer && scene && camera) {
-        renderer.render(scene, camera);
-    }
-    drawSequenceVisualization(); // Ensure 2D playhead advances
-}
+// Legacy sequencer functions removed - now using unified Sequencer class
+// The sequencers are now managed through sequencer1 and sequencer2 instances
 
 // ... rest of existing code ... 
 
@@ -6294,8 +6121,31 @@ function createAdditionalSequencer() {
     const platformRadius = radius + 1; // Make platform slightly larger than the outermost sequencer
     const existingPlatform = scene.children.find(child => child instanceof THREE.Mesh && child.geometry instanceof THREE.CylinderGeometry);
     if (existingPlatform) {
+        console.log(`[PLATFORM_DEBUG] Updating platform for sequencer ${sequencerId}`, {
+            platformRadius: platformRadius,
+            existingMaterial: !!existingPlatform.material,
+            materialType: existingPlatform.material ? existingPlatform.material.type : 'none'
+        });
+        
+        // Remove the old platform and create a new one with the updated material
+        scene.remove(existingPlatform);
         existingPlatform.geometry.dispose();
-        existingPlatform.geometry = new THREE.CylinderGeometry(platformRadius, platformRadius + 0.5, 0.2, 64);
+        if (existingPlatform.material) {
+            existingPlatform.material.dispose();
+        }
+        
+        // Create new platform with updated material
+        const newPlatformGeometry = new THREE.CylinderGeometry(platformRadius, platformRadius + 0.5, 0.2, 64);
+        const newPlatformMaterial = createGlossyMaterial(0x2a2a3e, 0.8); // Use the new material
+        const newPlatform = new THREE.Mesh(newPlatformGeometry, newPlatformMaterial);
+        newPlatform.position.y = -0.1;
+        scene.add(newPlatform);
+        
+        console.log(`[PLATFORM_DEBUG] Platform recreated with new material`, {
+            newRadius: platformRadius,
+            materialCreated: !!newPlatformMaterial,
+            materialType: newPlatformMaterial ? newPlatformMaterial.type : 'none'
+        });
     }
     
     debugLog('Sequencer', `Creating sequencer ${sequencerId} at radius ${radius}`);
@@ -6319,11 +6169,18 @@ function createAdditionalSequencer() {
         octaveRange: octaveRange,
         centerX: centerX,
         centerZ: centerZ,
-        midiChannel: (additionalSequencers.length + 2) % 16 // Start from channel 2 (0-based: 2, 3, 4, etc.)
+        midiChannel: (additionalSequencers.length + 3) % 16 // Start from channel 3 (0-based: 3, 4, 5, etc.) to avoid conflict with sequencer 2 (channel 1)
     });
     
     // Start the sequencer automatically
     sequencer.isPlaying = true;
+    
+    debugLog('Sequencer', `Created sequencer ${sequencerId} with MIDI channel ${sequencer.midiChannel}`, {
+        sequencerId: sequencerId,
+        midiChannel: sequencer.midiChannel,
+        radius: radius,
+        totalAdditionalSequencers: additionalSequencers.length + 1
+    });
     
     // Create sequencer controls
     const controlsContainer = document.querySelector('.controls');
@@ -6376,6 +6233,27 @@ function createAdditionalSequencer() {
             <label>Steps</label>
             <input type="range" id="steps-slider-${sequencerId}" min="0" max="32" value="16">
             <span id="steps-value-${sequencerId}" class="slider-value">16</span>
+        </div>
+        <div class="control-group">
+            <label>MIDI Channel</label>
+            <select id="midi-channel-${sequencerId}">
+                <option value="0">Ch 1</option>
+                <option value="1">Ch 2</option>
+                <option value="2">Ch 3</option>
+                <option value="3">Ch 4</option>
+                <option value="4">Ch 5</option>
+                <option value="5">Ch 6</option>
+                <option value="6">Ch 7</option>
+                <option value="7">Ch 8</option>
+                <option value="8">Ch 9</option>
+                <option value="9">Ch 10</option>
+                <option value="10">Ch 11</option>
+                <option value="11">Ch 12</option>
+                <option value="12">Ch 13</option>
+                <option value="13">Ch 14</option>
+                <option value="14">Ch 15</option>
+                <option value="15">Ch 16</option>
+            </select>
         </div>
     `;
     
@@ -6454,6 +6332,19 @@ function createAdditionalSequencer() {
             debugLog('Controls', `Updated steps for sequencer ${sequencerId}`, {
                 steps: sequencer.steps,
                 sequence: sequencer.sequence
+            });
+        });
+    }
+    
+    // Add MIDI channel control
+    const midiChannelSelect = document.getElementById(`midi-channel-${sequencerId}`);
+    if (midiChannelSelect) {
+        // Set the default selected channel based on the sequencer's assigned channel
+        midiChannelSelect.value = sequencer.midiChannel;
+        midiChannelSelect.addEventListener('change', (e) => {
+            sequencer.midiChannel = parseInt(e.target.value);
+            debugLog('Controls', `Updated MIDI channel for sequencer ${sequencerId}`, { 
+                midiChannel: sequencer.midiChannel 
             });
         });
     }
