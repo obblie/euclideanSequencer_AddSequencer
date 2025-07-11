@@ -426,6 +426,8 @@ class VisualEngine {
             // Store the group (which contains the mesh) in spheres array
             this.spheres.push(shape);
             if (scene) {
+                // Add sequencer ID to userData for cleanup tracking
+                shape.userData.sequencerId = this.sequencer.id;
                 scene.add(shape);
                 console.log(`[PLAYHEAD_DEBUG] After scene.add: shape.children[0].material = ${!!shape.children[0].material}`);
                 
@@ -564,6 +566,19 @@ class VisualEngine {
     disposeSpheres() {
         this.spheres.forEach(group => {
             if (scene) scene.remove(group);
+            // Dispose of geometry and materials
+            group.children.forEach(child => {
+                if (child.geometry) {
+                    child.geometry.dispose();
+                }
+                if (child.material) {
+                    if (Array.isArray(child.material)) {
+                        child.material.forEach(mat => mat.dispose());
+                    } else {
+                        child.material.dispose();
+                    }
+                }
+            });
         });
         this.spheres = [];
         this.animations = [];
@@ -2848,16 +2863,14 @@ function setupControls() {
     // Add delete button listeners for main sequencers
     const deleteBtn1 = document.querySelector('[data-sequencer-id="1"]');
     if (deleteBtn1) {
-        deleteBtn1.addEventListener('click', () => {
-            deleteSequencer(1);
-        });
+        deleteBtn1._deleteHandler = () => deleteSequencer(1);
+        deleteBtn1.addEventListener('click', deleteBtn1._deleteHandler);
     }
 
     const deleteBtn2 = document.querySelector('[data-sequencer-id="2"]');
     if (deleteBtn2) {
-        deleteBtn2.addEventListener('click', () => {
-            deleteSequencer(2);
-        });
+        deleteBtn2._deleteHandler = () => deleteSequencer(2);
+        deleteBtn2.addEventListener('click', deleteBtn2._deleteHandler);
     }
 
     addListener('clear-all', 'click', () => {
@@ -6229,10 +6242,24 @@ function setupShapeControls() {
 function createAdditionalSequencer() {
     debugLog('Sequencer', 'Creating additional sequencer');
     
-    const sequencerId = additionalSequencers.length + 3; // Start numbering after sequencer 1 and 2
-    const baseRadius = 8; // Starting radius for the first additional sequencer
-    const radiusIncrement = 2; // How much to increase the radius for each new sequencer
-    const radius = baseRadius + (additionalSequencers.length * radiusIncrement); // Increase radius for each new sequencer
+    // Calculate the next sequencer ID and radius
+    const totalSequencers = (sequencer1 ? 1 : 0) + (sequencer2 ? 1 : 0) + additionalSequencers.length;
+    const sequencerId = totalSequencers + 1; // Start from 1 if no sequencers exist
+    
+    // Determine radius based on existing sequencers
+    let radius;
+    if (totalSequencers === 0) {
+        // If no sequencers exist, start from center (radius 4)
+        radius = 4;
+    } else {
+        // Find the highest radius among existing sequencers and add 2
+        const existingRadii = [];
+        if (sequencer1) existingRadii.push(sequencer1.radius);
+        if (sequencer2) existingRadii.push(sequencer2.radius);
+        additionalSequencers.forEach(seq => existingRadii.push(seq.radius));
+        const maxRadius = Math.max(...existingRadii);
+        radius = maxRadius + 2;
+    }
     
     // Create platform if it doesn't exist or update its size
     const platformRadius = radius + 1; // Make platform slightly larger than the outermost sequencer
@@ -6274,12 +6301,12 @@ function createAdditionalSequencer() {
     const centerZ = 0; // Keep at center like original sequencers
     
     // Create new Sequencer instance
-    const assignedChannel = (additionalSequencers.length + 2) % 16;
+    const assignedChannel = (totalSequencers) % 16; // Start from channel 0 if no sequencers exist
     console.log('[MIDI_CHANNEL_DEBUG] Creating additional sequencer:', {
         sequencerId: sequencerId,
         assignedChannel: assignedChannel,
         assignedChannelDisplay: assignedChannel + 1, // Show 1-indexed channel number
-        additionalSequencersLength: additionalSequencers.length
+        totalSequencers: totalSequencers
     });
     
     const sequencer = new Sequencer(sequencerId, radius, {
@@ -6485,9 +6512,11 @@ function createAdditionalSequencer() {
     // Add delete button event listener
     const deleteBtn = header.querySelector('.delete-sequencer-btn');
     if (deleteBtn) {
-        deleteBtn.addEventListener('click', () => {
-            deleteSequencer(sequencerId);
-        });
+        deleteBtn._deleteHandler = () => deleteSequencer(sequencerId);
+        deleteBtn.addEventListener('click', deleteBtn._deleteHandler);
+        console.log(`[DELETE_DEBUG] Added delete event listener for sequencer ${sequencerId}`);
+    } else {
+        console.error(`[DELETE_DEBUG] Delete button not found for sequencer ${sequencerId}`);
     }
 }
 
@@ -6554,36 +6583,184 @@ function deleteSequencer(sequencerId) {
 function repositionSequencers() {
     console.log('[REPOSITION_DEBUG] Repositioning sequencers');
     
-    // Reposition additional sequencers
-    additionalSequencers.forEach((sequencer, index) => {
-        const newRadius = 8 + (index * 2); // Start at radius 8, increment by 2
-        const newId = index + 3; // Start from ID 3
+    // Collect all remaining sequencers with their current IDs
+    const allSequencers = [];
+    if (sequencer1) allSequencers.push({ sequencer: sequencer1, currentId: 1, isMain: true });
+    if (sequencer2) allSequencers.push({ sequencer: sequencer2, currentId: 2, isMain: true });
+    additionalSequencers.forEach((seq) => {
+        allSequencers.push({ sequencer: seq, currentId: seq.id, isMain: false });
+    });
+    
+    // Sort by current ID to maintain order
+    allSequencers.sort((a, b) => a.currentId - b.currentId);
+    
+    // Clear additionalSequencers array to rebuild it
+    additionalSequencers = [];
+    
+    // Reposition all sequencers
+    allSequencers.forEach((item, index) => {
+        const newId = index + 1;
+        const newRadius = 4 + (index * 2); // Start at radius 4, increment by 2
         
-        console.log(`[REPOSITION_DEBUG] Repositioning sequencer ${sequencer.id} to radius ${newRadius} with new ID ${newId}`);
+        console.log(`[REPOSITION_DEBUG] Repositioning sequencer ${item.currentId} to radius ${newRadius} with new ID ${newId}`);
         
         // Update sequencer properties
-        sequencer.radius = newRadius;
-        sequencer.id = newId;
+        item.sequencer.radius = newRadius;
+        item.sequencer.id = newId;
         
         // Update visual position
-        sequencer.visualEngine.createSpheres();
+        item.sequencer.visualEngine.createSpheres();
+        
+        // Reassign to main sequencers or additionalSequencers array
+        if (newId === 1) {
+            sequencer1 = item.sequencer;
+        } else if (newId === 2) {
+            sequencer2 = item.sequencer;
+        } else {
+            additionalSequencers.push(item.sequencer);
+        }
         
         // Update UI header
         const controlsContainer = document.querySelector('.controls');
         if (controlsContainer) {
-            const deleteBtn = controlsContainer.querySelector(`[data-sequencer-id="${sequencer.id}"]`);
+            // Find the sequencer group by the old ID first
+            const deleteBtn = controlsContainer.querySelector(`[data-sequencer-id="${item.currentId}"]`);
             const sequencerGroup = deleteBtn?.closest('.sequencer-group');
             if (sequencerGroup) {
                 const header = sequencerGroup.querySelector('.sequencer-header-with-delete');
                 if (header) {
                     header.querySelector('h3').textContent = `Sequencer ${newId}`;
-                    header.querySelector('.delete-sequencer-btn').setAttribute('data-sequencer-id', newId);
+                    const newDeleteBtn = header.querySelector('.delete-sequencer-btn');
+                    newDeleteBtn.setAttribute('data-sequencer-id', newId);
+                    
+                    // Reattach delete button event listener
+                    if (newDeleteBtn._deleteHandler) {
+                        newDeleteBtn.removeEventListener('click', newDeleteBtn._deleteHandler);
+                    }
+                    newDeleteBtn._deleteHandler = () => deleteSequencer(newId);
+                    newDeleteBtn.addEventListener('click', newDeleteBtn._deleteHandler);
+                    console.log(`[REPOSITION_DEBUG] Reattached delete listener for sequencer ${newId}`);
                 }
             }
         }
     });
     
     console.log('[REPOSITION_DEBUG] Sequencer repositioning complete');
+    console.log('[REPOSITION_DEBUG] Final state:', {
+        sequencer1: !!sequencer1,
+        sequencer2: !!sequencer2,
+        additionalSequencers: additionalSequencers.length
+    });
+    
+    // Ensure all delete buttons have proper event listeners
+    ensureDeleteButtonListeners();
+    
+    // Also ensure listeners are set up after a short delay to catch any timing issues
+    setTimeout(ensureDeleteButtonListeners, 100);
+    setTimeout(ensureDeleteButtonListeners, 500);
+    
+    // Clean up the 3D scene to remove any orphaned objects
+    cleanupScene();
+}
+
+// Function to clean up the 3D scene and remove orphaned objects
+function cleanupScene() {
+    console.log('[CLEANUP_DEBUG] Cleaning up 3D scene');
+    
+    if (!scene) return;
+    
+    // Remove any objects that don't belong to active sequencers
+    const activeSequencerIds = [];
+    if (sequencer1) activeSequencerIds.push(sequencer1.id);
+    if (sequencer2) activeSequencerIds.push(sequencer2.id);
+    additionalSequencers.forEach(seq => activeSequencerIds.push(seq.id));
+    
+    console.log('[CLEANUP_DEBUG] Active sequencer IDs:', activeSequencerIds);
+    
+    // Find and remove orphaned sphere groups
+    const objectsToRemove = [];
+    scene.traverse(object => {
+        if (object.userData && object.userData.sequencerId) {
+            if (!activeSequencerIds.includes(object.userData.sequencerId)) {
+                objectsToRemove.push(object);
+                console.log(`[CLEANUP_DEBUG] Found orphaned object for sequencer ${object.userData.sequencerId}`);
+            }
+        }
+    });
+    
+    objectsToRemove.forEach(object => {
+        scene.remove(object);
+        if (object.geometry) object.geometry.dispose();
+        if (object.material) {
+            if (Array.isArray(object.material)) {
+                object.material.forEach(mat => mat.dispose());
+            } else {
+                object.material.dispose();
+            }
+        }
+        console.log(`[CLEANUP_DEBUG] Removed orphaned object`);
+    });
+    
+    console.log(`[CLEANUP_DEBUG] Cleaned up ${objectsToRemove.length} orphaned objects`);
+}
+
+// Function to ensure all delete buttons have proper event listeners
+function ensureDeleteButtonListeners() {
+    console.log('[DELETE_DEBUG] Ensuring all delete button listeners are properly set up');
+    
+    const controlsContainer = document.querySelector('.controls');
+    if (!controlsContainer) {
+        console.error('[DELETE_DEBUG] Controls container not found');
+        return;
+    }
+    
+    // Find all delete buttons
+    const deleteButtons = controlsContainer.querySelectorAll('.delete-sequencer-btn');
+    console.log(`[DELETE_DEBUG] Found ${deleteButtons.length} delete buttons`);
+    
+    deleteButtons.forEach(deleteBtn => {
+        const sequencerId = deleteBtn.getAttribute('data-sequencer-id');
+        console.log(`[DELETE_DEBUG] Processing delete button for sequencer ${sequencerId}`);
+        
+        // Remove any existing event listeners
+        if (deleteBtn._deleteHandler) {
+            deleteBtn.removeEventListener('click', deleteBtn._deleteHandler);
+        }
+        
+        // Add new event listener
+        deleteBtn._deleteHandler = () => {
+            console.log(`[DELETE_DEBUG] Delete button clicked for sequencer ${sequencerId}`);
+            deleteSequencer(parseInt(sequencerId));
+        };
+        deleteBtn.addEventListener('click', deleteBtn._deleteHandler);
+        console.log(`[DELETE_DEBUG] Added delete event listener for sequencer ${sequencerId}`);
+    });
+    
+    // Also set up event delegation as a backup
+    setupDeleteEventDelegation();
+}
+
+// Function to set up event delegation for delete buttons as a backup
+function setupDeleteEventDelegation() {
+    const controlsContainer = document.querySelector('.controls');
+    if (!controlsContainer) return;
+    
+    // Remove any existing delegation listener
+    if (controlsContainer._deleteDelegationHandler) {
+        controlsContainer.removeEventListener('click', controlsContainer._deleteDelegationHandler);
+    }
+    
+    // Add event delegation
+    controlsContainer._deleteDelegationHandler = (event) => {
+        if (event.target.classList.contains('delete-sequencer-btn')) {
+            const sequencerId = event.target.getAttribute('data-sequencer-id');
+            console.log(`[DELETE_DEBUG] Delete button clicked via delegation for sequencer ${sequencerId}`);
+            deleteSequencer(parseInt(sequencerId));
+        }
+    };
+    
+    controlsContainer.addEventListener('click', controlsContainer._deleteDelegationHandler);
+    console.log('[DELETE_DEBUG] Set up delete event delegation');
 }
 
 function generatePitches(numSteps, rootNote, scaleType, octaveRange) {
@@ -6667,6 +6844,10 @@ init = function() {
     initAudioContext();
     originalInit();
     setupAddSequencerButton();
+    // Ensure delete button listeners are set up after initialization
+    setTimeout(ensureDeleteButtonListeners, 100);
+    setTimeout(ensureDeleteButtonListeners, 500);
+    setTimeout(ensureDeleteButtonListeners, 1000);
 }
 
 // ... rest of existing code ...
