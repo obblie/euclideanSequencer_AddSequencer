@@ -303,13 +303,305 @@ function getChordNotes(baseNote, chordType) {
     return intervals[chordType].map(interval => baseNote + interval);
 }
 
-// Sequencer class for independent sequencer objects
+// ============================================================================
+// REFACTORED SEQUENCER CLASS - IMPROVED ARCHITECTURE
+// ============================================================================
+
+// Audio Engine for handling sound generation
+class AudioEngine {
+    constructor(sequencer) {
+        this.sequencer = sequencer;
+        this.audioContext = null;
+        this.gainNode = null;
+    }
+
+    initialize() {
+        if (typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext)) {
+            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+    }
+
+    playNote(pitch, velocity, duration = 0.1) {
+        if (!this.audioContext || !internalAudioEnabled) return;
+
+        const frequency = midiToFrequency(pitch);
+        const oscillator = this.audioContext.createOscillator();
+        const gainNode = this.audioContext.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(this.audioContext.destination);
+        
+        oscillator.frequency.setValueAtTime(frequency, this.audioContext.currentTime);
+        gainNode.gain.setValueAtTime(0, this.audioContext.currentTime);
+        gainNode.gain.linearRampToValueAtTime(velocity / 127, this.audioContext.currentTime + 0.01);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, this.audioContext.currentTime + duration);
+        
+        oscillator.start(this.audioContext.currentTime);
+        oscillator.stop(this.audioContext.currentTime + duration);
+    }
+
+    sendMIDI(pitch, velocity) {
+        if (!midiOutputEnabled || !midiOutput) return;
+
+        const noteOn = [0x90 + this.sequencer.midiChannel, pitch, velocity];
+        const noteOff = [0x80 + this.sequencer.midiChannel, pitch, 0];
+        
+        sendMIDIMessage(noteOn);
+        setTimeout(() => {
+            sendMIDIMessage(noteOff);
+        }, 50);
+    }
+}
+
+// Visual Engine for handling 3D rendering
+class VisualEngine {
+    constructor(sequencer) {
+        this.sequencer = sequencer;
+        this.spheres = [];
+        this.animations = [];
+        this.materialCache = new Map();
+    }
+
+    createSpheres() {
+        this.disposeSpheres();
+        
+        // Calculate sphere size based on radius (larger radius = smaller spheres for better proportion)
+        const sphereSize = Math.max(0.15, Math.min(0.3, 2.0 / this.sequencer.radius));
+        
+        console.log(`[PLAYHEAD_DEBUG] Creating spheres for sequencer ${this.sequencer.id}: steps=${this.sequencer.steps}, radius=${this.sequencer.radius}`);
+        
+        for (let i = 0; i < this.sequencer.steps; i++) {
+            const angle = (i / this.sequencer.steps) * Math.PI * 2;
+            
+            const isActive = this.sequencer.sequence[i] === 1;
+            // Create a fresh material for each sphere instead of using cache
+            const material = createGlossyMaterial(isActive ? COLORS.active : COLORS.inactive);
+            console.log(`[PLAYHEAD_DEBUG] Sphere ${i}: isActive=${isActive}, material=${material ? 'valid' : 'null/undefined'}`);
+            
+            const shape = createShapeByType(sphereSize, 1.0, material, currentShapeType);
+            console.log(`[PLAYHEAD_DEBUG] Sphere ${i}: shape.children[0].material after createShapeByType: ${!!shape.children[0].material}`);
+            
+            shape.position.x = Math.cos(angle) * this.sequencer.radius + this.sequencer.centerX;
+            shape.position.z = Math.sin(angle) * this.sequencer.radius + this.sequencer.centerZ;
+            shape.position.y = 0.5; // Raise above platform
+            
+            // Store the group (which contains the mesh) in spheres array
+            this.spheres.push(shape);
+            if (scene) {
+                scene.add(shape);
+                console.log(`[PLAYHEAD_DEBUG] After scene.add: shape.children[0].material = ${!!shape.children[0].material}`);
+                
+                // Check if material is still there after scene.add
+                if (shape.children[0].material) {
+                    console.log(`[PLAYHEAD_DEBUG] Material type after scene.add: ${shape.children[0].material.type}, uuid: ${shape.children[0].material.uuid}`);
+                }
+            }
+        }
+        
+        console.log(`[PLAYHEAD_DEBUG] Created ${this.spheres.length} spheres for sequencer ${this.sequencer.id}`);
+        
+        // Debug: Check material status immediately after creation
+        this.spheres.forEach((group, index) => {
+            if (group.children.length > 0) {
+                const child = group.children[0];
+                console.log(`[PLAYHEAD_DEBUG] Sphere ${index} material status after creation: ${!!child.material}`);
+                if (child.material) {
+                    console.log(`[PLAYHEAD_DEBUG] Sphere ${index} material type: ${child.material.type}, uuid: ${child.material.uuid}`);
+                }
+            }
+        });
+    }
+
+    getMaterial(color) {
+        const key = color.toString();
+        console.log(`[PLAYHEAD_DEBUG] getMaterial called with color: ${color}, key: ${key}`);
+        
+        if (!this.materialCache.has(key)) {
+            console.log(`[PLAYHEAD_DEBUG] Creating new material for color: ${color}`);
+            const newMaterial = createGlossyMaterial(color);
+            console.log(`[PLAYHEAD_DEBUG] createGlossyMaterial returned: ${!!newMaterial}`);
+            this.materialCache.set(key, newMaterial);
+        } else {
+            console.log(`[PLAYHEAD_DEBUG] Using cached material for color: ${color}`);
+        }
+        
+        const material = this.materialCache.get(key);
+        console.log(`[PLAYHEAD_DEBUG] Material result: ${material ? 'valid' : 'null/undefined'}`);
+        return material;
+    }
+
+    updateSphereColors() {
+        // Ensure currentStep is within bounds
+        const safeCurrentStep = Math.max(0, Math.min(this.sequencer.currentStep, this.spheres.length - 1));
+        
+        console.log(`[PLAYHEAD_DEBUG] Updating sphere colors for sequencer ${this.sequencer.id}: currentStep=${this.sequencer.currentStep}, safeStep=${safeCurrentStep}, spheres=${this.spheres.length}`);
+        
+        // Debug: Check material status at the start of updateSphereColors
+        if (this.spheres.length > 0) {
+            const firstSphere = this.spheres[0];
+            if (firstSphere.children.length > 0) {
+                console.log(`[PLAYHEAD_DEBUG] First sphere material status at start of updateSphereColors: ${!!firstSphere.children[0].material}`);
+            }
+        }
+        
+        // If no spheres exist, recreate them
+        if (this.spheres.length === 0) {
+            console.log(`[PLAYHEAD_DEBUG] No spheres found for sequencer ${this.sequencer.id}, recreating...`);
+            this.createSpheres();
+        }
+        
+        let playheadFound = false;
+        this.spheres.forEach((group, index) => {
+            console.log(`[PLAYHEAD_DEBUG] Checking sphere ${index} (type: ${typeof index}) against safeCurrentStep ${safeCurrentStep} (type: ${typeof safeCurrentStep}) for sequencer ${this.sequencer.id}`);
+            const isMatch = index === safeCurrentStep;
+            console.log(`[PLAYHEAD_DEBUG] Equality test: ${index} === ${safeCurrentStep} = ${isMatch}`);
+            
+            if (group.children.length > 0) {
+                const mesh = group.children[0];
+                console.log(`[PLAYHEAD_DEBUG] Mesh ${index} has material: ${!!mesh.material}`);
+                
+                if (mesh.material) {
+                    let color;
+                    console.log(`[PLAYHEAD_DEBUG] About to check if ${index} === ${safeCurrentStep} for sequencer ${this.sequencer.id}`);
+                    if (index === safeCurrentStep) {
+                        color = COLORS.playhead; // Use the same playhead color as original sequencers
+                        group.scale.set(1.5, 1.5, 1.5);
+                        playheadFound = true;
+                        console.log(`[PLAYHEAD_DEBUG] Set playhead for sequencer ${this.sequencer.id} at sphere ${index} with color: ${color}`);
+                    } else if (this.sequencer.sequence[index] === 1) {
+                        color = COLORS.active;
+                        group.scale.set(1, 1, 1);
+                        console.log(`[PLAYHEAD_DEBUG] Set active color for sequencer ${this.sequencer.id} at sphere ${index}: ${color}`);
+                    } else {
+                        color = COLORS.inactive;
+                        group.scale.set(1, 1, 1);
+                        console.log(`[PLAYHEAD_DEBUG] Set inactive color for sequencer ${this.sequencer.id} at sphere ${index}: ${color}`);
+                    }
+                    
+                    console.log(`[PLAYHEAD_DEBUG] Before disposal: mesh.material = ${!!mesh.material}`);
+                    mesh.material.dispose();
+                    console.log(`[PLAYHEAD_DEBUG] After disposal: mesh.material = ${!!mesh.material}`);
+                    const newMaterial = this.getMaterial(color);
+                    console.log(`[PLAYHEAD_DEBUG] New material created: ${!!newMaterial}`);
+                    mesh.material = newMaterial;
+                    console.log(`[PLAYHEAD_DEBUG] After assignment: mesh.material = ${!!mesh.material}`);
+                }
+            }
+        });
+        
+        if (!playheadFound) {
+            console.log(`[PLAYHEAD_DEBUG] WARNING: No playhead set for sequencer ${this.sequencer.id} at step ${safeCurrentStep}`);
+        }
+        
+        // Force a render update to ensure the visual changes are visible
+        if (typeof renderer !== 'undefined' && renderer && scene && camera) {
+            renderer.render(scene, camera);
+        }
+    }
+
+    animateStep() {
+        if (!this.spheres[this.sequencer.currentStep]) {
+            return;
+        }
+
+        // Clear existing animations for this sphere
+        this.animations = this.animations.filter(anim => anim.group !== this.spheres[this.sequencer.currentStep]);
+        
+        // Add new animation
+        this.animations.push(createStepAnimation(this.spheres[this.sequencer.currentStep], performance.now()));
+
+        // Scale animation for visibility
+        this.spheres[this.sequencer.currentStep].scale.set(1.2, 1.2, 1.2);
+        setTimeout(() => {
+            if (this.spheres[this.sequencer.currentStep]) {
+                this.spheres[this.sequencer.currentStep].scale.set(1.0, 1.0, 1.0);
+            }
+        }, 100);
+    }
+
+    updateAnimations(now) {
+        this.animations = this.animations.filter(anim => updateAnimation(anim, now));
+    }
+
+    disposeSpheres() {
+        this.spheres.forEach(group => {
+            if (scene) scene.remove(group);
+        });
+        this.spheres = [];
+        this.animations = [];
+    }
+
+    dispose() {
+        this.disposeSpheres();
+        this.materialCache.forEach(material => material.dispose());
+        this.materialCache.clear();
+    }
+}
+
+// Sequence Engine for handling rhythm generation and playback logic
+class SequenceEngine {
+    constructor(sequencer) {
+        this.sequencer = sequencer;
+    }
+
+    generateSequence() {
+        this.sequencer.sequence = generateEuclideanRhythm(this.sequencer.beats, this.sequencer.steps);
+        this.sequencer.pitches = generatePitches(
+            this.sequencer.steps, 
+            this.sequencer.rootNote || 60, 
+            this.sequencer.scaleType || 'minor', 
+            this.sequencer.octaveRange || 2
+        );
+    }
+
+    getNextStep() {
+        switch (this.sequencer.mode) {
+            case 'forward':
+                return (this.sequencer.currentStep + 1) % this.sequencer.steps;
+            case 'backward':
+                return this.sequencer.currentStep === 0 ? this.sequencer.steps - 1 : this.sequencer.currentStep - 1;
+            case 'pingpong':
+                if (this.sequencer.currentStep === this.sequencer.steps - 1) {
+                    this.sequencer.direction = -1;
+                } else if (this.sequencer.currentStep === 0) {
+                    this.sequencer.direction = 1;
+                }
+                return this.sequencer.currentStep + this.sequencer.direction;
+            case 'random':
+                return Math.floor(Math.random() * this.sequencer.steps);
+            case 'brownian':
+                const range = Math.min(this.sequencer.brownianRange, this.sequencer.steps - 1);
+                const offset = Math.floor(Math.random() * (range * 2 + 1)) - range;
+                return (this.sequencer.currentStep + offset + this.sequencer.steps) % this.sequencer.steps;
+            default:
+                return (this.sequencer.currentStep + 1) % this.sequencer.steps;
+        }
+    }
+
+    shouldPlaySound() {
+        return this.sequencer.sequence[this.sequencer.currentStep] === 1 && 
+               Math.random() * 100 < this.sequencer.probability;
+    }
+
+    reset() {
+        this.sequencer.currentStep = 0;
+        this.sequencer.lastStepTime = 0;
+        this.sequencer.direction = 1;
+    }
+}
+
+// Main Sequencer class with improved architecture
 class Sequencer {
     constructor(id, radius, options = {}) {
         this.id = id;
         this.radius = radius;
         this.centerX = options.centerX || 0;
         this.centerZ = options.centerZ || 0;
+        
+        // Initialize engines
+        this.audioEngine = new AudioEngine(this);
+        this.visualEngine = new VisualEngine(this);
+        this.sequenceEngine = new SequenceEngine(this);
         
         // Timing and transport
         this.isPlaying = options.isPlaying !== undefined ? options.isPlaying : true;
@@ -320,125 +612,67 @@ class Sequencer {
         // Sequence parameters
         this.beats = options.beats || 16;
         this.steps = options.steps || 16;
-        this.sequence = generateEuclideanRhythm(this.beats, this.steps);
-        this.pitches = generatePitches(this.steps, options.rootNote || 60, options.scaleType || 'minor', options.octaveRange || 2);
+        this.rootNote = options.rootNote || 60;
+        this.scaleType = options.scaleType || 'minor';
+        this.octaveRange = options.octaveRange || 2;
         
         // Playback parameters
         this.velocity = options.velocity || 100;
         this.probability = options.probability || 100;
         this.mode = options.mode || 'forward';
-        this.direction = 1; // For ping-pong mode
+        this.direction = 1;
         this.brownianRange = options.brownianRange || 1;
         this.lastBrownianStep = 0;
-        
-        // Visual elements
-        this.spheres = [];
-        this.animations = [];
         
         // Audio/MIDI
         this.midiChannel = options.midiChannel || (id % 16);
         this.chordMode = options.chordMode || false;
         this.chordType = options.chordType || 'major';
         
-        // Create visual elements
-        this.createSpheres();
+        // Initialize sequence and visuals
+        this.sequenceEngine.generateSequence();
+        this.visualEngine.createSpheres();
+        this.visualEngine.updateSphereColors();
         
-        // Initialize playhead position
-        this.updateSphereColors();
-    }
-    
-    createSpheres() {
-        // Remove existing spheres
-        this.spheres.forEach(group => {
-            if (scene) scene.remove(group);
-        });
-        this.spheres = [];
-        
-        // Create new spheres
-        for (let i = 0; i < this.steps; i++) {
-            const angle = (i / this.steps) * Math.PI * 2;
-            const group = new THREE.Group();
-            
-            const material = createGlossyMaterial(this.sequence[i] === 1 ? COLORS.active : COLORS.inactive);
-            const shape = createShapeByType(0.1, 1.0, material, currentShapeType);
-            
-            shape.position.x = Math.cos(angle) * this.radius + this.centerX;
-            shape.position.z = Math.sin(angle) * this.radius + this.centerZ;
-            shape.position.y = 0;
-            
-            group.add(shape);
-            this.spheres.push(group);
-            if (scene) scene.add(group);
-        }
+        // Initialize audio
+        this.audioEngine.initialize();
     }
     
     update(now, bpm) {
-        console.log(`[DEBUG] Sequencer ${this.id} update called, isPlaying: ${this.isPlaying}`);
+        if (!this.isPlaying) return;
         
-        if (!this.isPlaying) {
-            console.log(`[DEBUG] Sequencer ${this.id} is not playing, skipping update`);
-            return;
-        }
+        // Only advance step when master timing allows it
+        // The master timing is handled in the main animation loop
+        // This method is called every frame, but we only want to advance on step boundaries
         
-        console.log(`[DEBUG] Sequencer ${this.id} advancing step from ${this.currentStep}`);
+        // Update visual animations
+        this.visualEngine.updateAnimations(now);
+    }
+    
+    step() {
+        if (!this.isPlaying) return;
         
-        // Simply advance the step - the master transport handles timing
         this.advanceStep();
-        
-        // Update animations
-        this.animations = this.animations.filter(anim => updateAnimation(anim, now));
     }
     
     advanceStep() {
-        const nextStep = this.getNextStep();
+        const nextStep = this.sequenceEngine.getNextStep();
         this.currentStep = nextStep;
 
-        console.log(`[DEBUG] Sequencer ${this.id} advanced to step ${this.currentStep}`);
+        console.log(`[PLAYHEAD_DEBUG] Sequencer ${this.id} advanced to step ${this.currentStep}`);
 
-        // Play sound if step is active and probability check passes
-        if (this.sequence[this.currentStep] === 1 && Math.random() * 100 < this.probability) {
+        // Play sound if conditions are met
+        if (this.sequenceEngine.shouldPlaySound()) {
             this.playSound();
         }
 
-        // Animate the current step
-        if (this.spheres[this.currentStep]) {
-            this.animations = this.animations.filter(anim => anim.group !== this.spheres[this.currentStep]);
-            this.animations.push(createStepAnimation(this.spheres[this.currentStep], performance.now()));
-
-            // Add scale animation for playhead visibility
-            this.spheres[this.currentStep].scale.set(1.2, 1.2, 1.2);
-            setTimeout(() => {
-                if (this.spheres[this.currentStep]) {
-                    this.spheres[this.currentStep].scale.set(1.0, 1.0, 1.0);
-                }
-            }, 100);
-        }
-
-        // Update sphere colors to show playhead
-        this.updateSphereColors();
-    }
-    
-    getNextStep() {
-        switch (this.mode) {
-            case 'forward':
-                return (this.currentStep + 1) % this.steps;
-            case 'backward':
-                return this.currentStep === 0 ? this.steps - 1 : this.currentStep - 1;
-            case 'pingpong':
-                if (this.currentStep === this.steps - 1) {
-                    this.direction = -1;
-                } else if (this.currentStep === 0) {
-                    this.direction = 1;
-                }
-                return this.currentStep + this.direction;
-            case 'random':
-                return Math.floor(Math.random() * this.steps);
-            case 'brownian':
-                const range = Math.min(this.brownianRange, this.steps - 1);
-                const offset = Math.floor(Math.random() * (range * 2 + 1)) - range;
-                return (this.currentStep + offset + this.steps) % this.steps;
-            default:
-                return (this.currentStep + 1) % this.steps;
+        // Update visuals
+        this.visualEngine.animateStep();
+        this.visualEngine.updateSphereColors();
+        
+        // Force immediate render to ensure visual changes are visible
+        if (typeof renderer !== 'undefined' && renderer && scene && camera) {
+            renderer.render(scene, camera);
         }
     }
     
@@ -446,76 +680,23 @@ class Sequencer {
         const pitch = this.pitches[this.currentStep];
         const velocity = this.velocity;
         
-        // Play internal audio
-        if (internalAudioEnabled && audioContext) {
-            const frequency = midiToFrequency(pitch);
-            const oscillator = audioContext.createOscillator();
-            const gainNode = audioContext.createGain();
-            
-            oscillator.connect(gainNode);
-            gainNode.connect(audioContext.destination);
-            
-            oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
-            gainNode.gain.setValueAtTime(0, audioContext.currentTime);
-            gainNode.gain.linearRampToValueAtTime(velocity / 127, audioContext.currentTime + 0.01);
-            gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.1);
-            
-            oscillator.start(audioContext.currentTime);
-            oscillator.stop(audioContext.currentTime + 0.1);
-        }
-        
-        // Send MIDI message
-        if (midiOutputEnabled && midiOutput) {
-            const noteOn = [0x90 + this.midiChannel, pitch, velocity];
-            const noteOff = [0x80 + this.midiChannel, pitch, 0];
-            
-            sendMIDIMessage(noteOn);
-            setTimeout(() => {
-                sendMIDIMessage(noteOff);
-            }, 50);
-        }
+        this.audioEngine.playNote(pitch, velocity);
+        this.audioEngine.sendMIDI(pitch, velocity);
     }
     
-    updateSphereColors() {
-        this.spheres.forEach((group, index) => {
-            group.children.forEach(child => {
-                if (child.material) {
-                    let color;
-                    if (index === this.currentStep) {
-                        color = 0xff00ff; // Magenta for testing
-                        group.scale.set(1.5, 1.5, 1.5);
-                        console.log(`[DEBUG] Sequencer ${this.id} playhead at step ${index}`);
-                    } else if (this.sequence[index] === 1) {
-                        color = COLORS.active;
-                        group.scale.set(1, 1, 1);
-                    } else {
-                        color = COLORS.inactive;
-                        group.scale.set(1, 1, 1);
-                    }
-                    child.material.dispose();
-                    child.material = createGlossyMaterial(color);
-                }
-            });
-        });
-        if (typeof renderer !== 'undefined' && renderer && scene && camera) {
-            renderer.render(scene, camera);
-        }
-    }
-    
-    updateSequence() {
-        this.sequence = generateEuclideanRhythm(this.beats, this.steps);
-        this.pitches = generatePitches(this.steps, 60, 'minor', 2);
-        this.createSpheres();
-    }
-    
+    // Parameter setters with automatic updates
     setBeats(beats) {
         this.beats = beats;
-        this.updateSequence();
+        this.sequenceEngine.generateSequence();
+        this.visualEngine.createSpheres();
+        this.visualEngine.updateSphereColors();
     }
     
     setSteps(steps) {
         this.steps = steps;
-        this.updateSequence();
+        this.sequenceEngine.generateSequence();
+        this.visualEngine.createSpheres();
+        this.visualEngine.updateSphereColors();
     }
     
     setMode(mode) {
@@ -537,23 +718,20 @@ class Sequencer {
     }
     
     reset() {
-        this.currentStep = 0;
-        this.lastStepTime = 0;
-        this.direction = 1;
+        this.sequenceEngine.reset();
+        this.visualEngine.updateSphereColors();
     }
     
     dispose() {
-        this.spheres.forEach(group => {
-            if (scene) scene.remove(group);
-        });
-        this.spheres = [];
-        this.animations = [];
+        this.visualEngine.dispose();
     }
 }
 
-// Add these two functions here
+// ... existing code ...
+
 function createGlossyMaterial(color, glowIntensity = 0.3) {
-    return new THREE.MeshPhysicalMaterial({
+    console.log(`[PLAYHEAD_DEBUG] createGlossyMaterial called with color: ${color}, glowIntensity: ${glowIntensity}`);
+    const material = new THREE.MeshPhysicalMaterial({
         color: color,
         metalness: 0.3,
         roughness: 0.2,
@@ -565,6 +743,8 @@ function createGlossyMaterial(color, glowIntensity = 0.3) {
         envMapIntensity: 1.0,
         transmission: 0.0
     });
+    console.log(`[PLAYHEAD_DEBUG] Created material: ${material ? 'valid' : 'null/undefined'}`);
+    return material;
 }
 
 // Add shape variations
@@ -834,9 +1014,12 @@ function createShapeByType(radius, height, material, type = currentShapeType) {
     }
     
     baseGeometry.computeVertexNormals();
+    console.log(`[PLAYHEAD_DEBUG] createShapeByType: material before mesh creation: ${!!material}`);
     const shape = new THREE.Mesh(baseGeometry, material);
+    console.log(`[PLAYHEAD_DEBUG] createShapeByType: shape.material after creation: ${!!shape.material}`);
     
     group.add(shape);
+    console.log(`[PLAYHEAD_DEBUG] createShapeByType: group.children[0].material after adding: ${!!group.children[0].material}`);
     return group;
 }
 
@@ -1660,17 +1843,21 @@ function animate() {
         }
         // Update all additional sequencers using the new Sequencer class
         if (additionalSequencers && additionalSequencers.length > 0) {
-            console.log(`[DEBUG] Updating ${additionalSequencers.length} additional sequencers`);
+            console.log(`[PLAYHEAD_DEBUG] Processing ${additionalSequencers.length} additional sequencers`);
             additionalSequencers.forEach((sequencer, index) => {
-                console.log(`[DEBUG] Sequencer ${index}:`, sequencer);
-                console.log(`[DEBUG] Is Sequencer instance:`, sequencer instanceof Sequencer);
                 if (sequencer && sequencer instanceof Sequencer) {
-                    sequencer.update(now, bpm);
-                } else {
-                    console.log(`[DEBUG] Skipping sequencer ${index} - not a Sequencer instance`);
+                    console.log(`[PLAYHEAD_DEBUG] Calling step() for sequencer ${sequencer.id}`);
+                    sequencer.step(); // Call step() instead of update() for timing
                 }
             });
         }
+        
+        // Update visual animations for additional sequencers
+        additionalSequencers.forEach(sequencer => {
+            if (sequencer && sequencer instanceof Sequencer) {
+                sequencer.update(now, bpm); // This only updates visual animations, not timing
+            }
+        });
     }
 
     // Update particle system
@@ -6087,7 +6274,7 @@ function setupShapeControls() {
         // Update additional sequencers if they exist
         additionalSequencers.forEach(sequencer => {
             if (sequencer instanceof Sequencer) {
-                sequencer.createSpheres();
+                sequencer.visualEngine.createSpheres();
             }
         });
         }
@@ -6113,6 +6300,12 @@ function createAdditionalSequencer() {
     
     debugLog('Sequencer', `Creating sequencer ${sequencerId} at radius ${radius}`);
     
+    // Position additional sequencers in concentric circles (like the original sequencers)
+    // Original sequencer 1 is at radius 4, sequencer 2 is at radius 6
+    // Additional sequencers will be at radius 8, 10, 12, etc.
+    const centerX = 0; // Keep at center like original sequencers
+    const centerZ = 0; // Keep at center like original sequencers
+    
     // Create new Sequencer instance
     const sequencer = new Sequencer(sequencerId, radius, {
         beats: 16,
@@ -6124,8 +6317,13 @@ function createAdditionalSequencer() {
         rootNote: rootNote,
         scaleType: scaleType,
         octaveRange: octaveRange,
-        midiChannel: sequencerId % 16
+        centerX: centerX,
+        centerZ: centerZ,
+        midiChannel: (additionalSequencers.length + 2) % 16 // Start from channel 2 (0-based: 2, 3, 4, etc.)
     });
+    
+    // Start the sequencer automatically
+    sequencer.isPlaying = true;
     
     // Create sequencer controls
     const controlsContainer = document.querySelector('.controls');
